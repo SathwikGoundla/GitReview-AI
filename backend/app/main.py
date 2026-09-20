@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
+from app.api.feedback import router as feedback_router
 from app.api.pull_requests import router as pull_requests_router
 from app.api.repositories import router as repositories_router
 from app.core.config import get_settings
@@ -72,6 +73,7 @@ async def gitreview_error_handler(request: Request, exc: GitReviewError) -> JSON
 app.include_router(auth_router)
 app.include_router(repositories_router)
 app.include_router(pull_requests_router)
+app.include_router(feedback_router)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────

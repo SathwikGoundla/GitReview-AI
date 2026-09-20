@@ -586,3 +586,111 @@ None blocking. The 2 warnings are third-party library deprecations (starlette/an
 
 ---
 *Last updated: 2026-09-19 | Step 15 IMPLEMENTED*
+
+---
+
+## STEP 16 — Feedback API Layer
+
+**Status: IMPLEMENTED AND INTEGRATED**
+**Date: 2026-09-20**
+**Tests: 317 / 317 passing (25 new tests added)**
+**Ruff: CLEAN**
+
+### Objective
+Expose the feedback collection endpoint (`POST /api/analyses/{analysis_id}/feedback`),
+allowing authenticated reviewers to submit helpful/unhelpful ratings on specific AI
+predictions (risk tier, reviewer recommendation, checklist item). Updates the
+confidence_calibration running counts on every submission.
+
+### Repository Correction Applied
+Step 16 files were initially pushed to the repository root (`/app/`, `/tests/`,
+root `PROJECT_STATE.md`) instead of the canonical `backend/` tree. This has been
+corrected: all Step 16 files are now in their proper `backend/` locations and the
+misplaced root artifacts have been removed.
+
+### Files Integrated into backend/
+
+| File | Destination |
+|------|-------------|
+| `app/feedback/schemas.py` | `backend/app/feedback/schemas.py` |
+| `app/feedback/service.py` | `backend/app/feedback/service.py` |
+| `app/api/feedback.py` | `backend/app/api/feedback.py` |
+| `tests/unit/feedback/test_feedback_service.py` | `backend/tests/unit/feedback/test_feedback_service.py` |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `backend/app/main.py` | Added `from app.api.feedback import router as feedback_router` and `app.include_router(feedback_router)` |
+| `README.md` | Added feedback endpoint to API list; updated test count to 317/317; added `feedback/` to project structure |
+
+### Files Removed (misplaced root artifacts)
+- `/app/` (root-level, entire directory)
+- `/tests/` (root-level, entire directory)
+- `/PROJECT_STATE.md` (root-level duplicate — `backend/PROJECT_STATE.md` is now the sole authoritative file)
+
+### API Route Added
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/analyses/{analysis_id}/feedback` | Yes (X-Session-Token) | Submit or update (upsert) feedback on an AI prediction |
+
+### Authentication
+X-Session-Token header required. Uses existing `get_current_user` dependency.
+
+### Authorization and IDOR Protection
+- Authorization chain: `pull_request_analyses → pull_requests → repositories → repository_access`
+- Single JOIN query verifies caller has non-revoked RepositoryAccess for the repository owning the analysis
+- Unauthorized access returns HTTP 404 (not 403) — prevents leaking whether the analysis exists
+- `prediction_reference_id` validated against `analysis_id` — prevents cross-analysis IDOR
+
+### Feedback Upsert Semantics
+LLD A.17: "Duplicate feedback on the same prediction — upserted, not duplicated."
+- SELECT for existing row by (user_id + prediction FK)
+- If found: update rating and comment in place
+- If not found: INSERT new row
+- HTTP 200 returned for both new and updated feedback
+
+### Calibration Behavior
+- `confidence_calibration` counters updated immediately in same transaction
+- New helpful → `helpful_count += 1`
+- New unhelpful → `unhelpful_count += 1`
+- Rating change → old counter decremented, new counter incremented
+- Missing calibration row: warning logged, graceful skip (no failure)
+
+### Database / Migration Changes
+**NONE.** Existing 17-table schema fully supports all required functionality.
+No new migration was required or created.
+
+### Test Results (exact)
+
+```
+Focused:
+  Command: python -m pytest tests/unit/feedback/test_feedback_service.py -q
+  Result:  25 passed, 2 warnings
+
+Full suite:
+  Command: python -m pytest tests/ -q
+  Result:  317 passed, 2 warnings
+  (292 Steps 1–15 baseline + 25 new Step 16 tests)
+```
+
+### Ruff Result (exact)
+```
+Command: python -m ruff check .   (run from backend/)
+Result:  All checks passed!
+```
+
+### Known Limitations
+1. No integration tests against real PostgreSQL
+2. Calibration update not protected by SELECT FOR UPDATE (acceptable at MVP scale)
+
+### Remaining Work
+- Chrome Extension / frontend (not started)
+- GitHub Actions integration (not started)
+- Step 17: Analytics API Layer (next planned step)
+  - GET /api/analytics/me (individual — user_daily_metrics)
+  - GET /api/analytics/repositories/{repository_id} (team lead — repository_daily_metrics)
+
+---
+*Last updated: 2026-09-20 | Step 16 IMPLEMENTED AND INTEGRATED | Repository structure corrected*

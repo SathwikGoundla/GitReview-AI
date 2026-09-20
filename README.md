@@ -76,6 +76,7 @@ Confidence calculation is implemented using a hybrid scoring mechanism with a co
 * `GET /api/repositories/{repository_id}/pulls`
 * `GET /api/repositories/{repository_id}/pulls/{pull_number}`
 * `POST /api/repositories/{repository_id}/pulls/{pull_number}/analyze`
+* `POST /api/analyses/{analysis_id}/feedback`
 * `GET /health`
 
 ## Architecture
@@ -142,6 +143,7 @@ backend/
 │   ├── ai_provider/
 │   ├── analysis/
 │   ├── core/
+│   ├── feedback/
 │   ├── github_integration/
 │   ├── pull_requests/
 │   └── repositories/
@@ -191,7 +193,7 @@ backend/
 
 ## Testing
 
-- Unit and API tests: 292/292 passing
+- Unit and API tests: 317/317 passing
 - Ruff: PASS
 
 ## Security
