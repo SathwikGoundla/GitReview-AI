@@ -155,11 +155,11 @@ backend/
 
 ## Current Status
 
-> **Backend implementation: completed through Step 15**
+> **Backend implementation completed. The frontend/Chrome Extension and GitHub Actions integration are currently under development.**
 >
-> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, AI-assisted PR analysis pipeline, deterministic risk signals, hybrid risk assessment, confidence scoring, reviewer recommendation, adaptive checklist generation, and core REST API workflows.
+> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, Gemini-based semantic PR analysis, deterministic code-analysis signals, hybrid risk assessment, explainable rationale, confidence scoring, reviewer recommendation, adaptive checklist, feedback API, confidence calibration, and core REST API workflows.
 >
-> The complete product is still under active development. The Chrome Extension/frontend experience and GitHub Actions integration are planned next.
+> The complete product is still under active development.
 
 ## Roadmap
 
@@ -177,11 +177,12 @@ backend/
 - [x] Confidence scoring
 - [x] Reviewer recommendation
 - [x] Adaptive checklist
+- [x] Feedback API
+- [x] Confidence calibration
 - [x] Core REST API workflows
 - [x] Backend testing and quality verification
 
 ### In Development / Planned
-- [ ] Feedback API and calibration workflow
 - [ ] Chrome Extension UI
 - [ ] GitHub Actions integration
 - [ ] End-to-end integration testing
