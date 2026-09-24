@@ -77,6 +77,8 @@ Confidence calculation is implemented using a hybrid scoring mechanism with a co
 * `GET /api/repositories/{repository_id}/pulls/{pull_number}`
 * `POST /api/repositories/{repository_id}/pulls/{pull_number}/analyze`
 * `POST /api/analyses/{analysis_id}/feedback`
+* `GET /api/analytics/me`
+* `GET /api/analytics/repositories/{repository_id}`
 * `GET /health`
 
 ## Architecture
@@ -159,7 +161,7 @@ backend/
 
 > **Backend implementation completed. The frontend/Chrome Extension and GitHub Actions integration are currently under development.**
 >
-> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, Gemini-based semantic PR analysis, deterministic code-analysis signals, hybrid risk assessment, explainable rationale, confidence scoring, reviewer recommendation, adaptive checklist, feedback API, confidence calibration, and core REST API workflows.
+> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, Gemini-based semantic PR analysis, deterministic code-analysis signals, hybrid risk assessment, explainable rationale, confidence scoring, reviewer recommendation, adaptive checklist, feedback API, confidence calibration, and core REST API workflows, individual and repository-level analytics API.
 >
 > The complete product is still under active development.
 
@@ -180,6 +182,7 @@ backend/
 - [x] Reviewer recommendation
 - [x] Adaptive checklist
 - [x] Feedback API
+- [x] Analytics API (individual user + repository-level)
 - [x] Confidence calibration
 - [x] Core REST API workflows
 - [x] Backend testing and quality verification
@@ -193,7 +196,7 @@ backend/
 
 ## Testing
 
-- Unit and API tests: 317/317 passing
+- Unit and API tests: 352/352 passing
 - Ruff: PASS
 
 ## Security

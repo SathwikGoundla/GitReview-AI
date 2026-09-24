@@ -694,3 +694,125 @@ Result:  All checks passed!
 
 ---
 *Last updated: 2026-09-20 | Step 16 IMPLEMENTED AND INTEGRATED | Repository structure corrected*
+
+---
+
+## STEP 17 — Analytics API Layer
+
+**Status: IMPLEMENTED**
+**Date: 2026-09-24**
+
+### Implementation Summary
+
+Implemented the Analytics API Layer (LLD A.18 / SRS FR-9) using on-demand
+SQL aggregation over the existing transactional tables. No new migrations,
+no new tables, no new infrastructure.
+
+### Files Created
+
+| File | Location |
+|------|----------|
+| `app/analytics/__init__.py` | `backend/app/analytics/__init__.py` |
+| `app/analytics/schemas.py` | `backend/app/analytics/schemas.py` |
+| `app/analytics/service.py` | `backend/app/analytics/service.py` |
+| `app/api/analytics.py` | `backend/app/api/analytics.py` |
+| `tests/unit/analytics/__init__.py` | `backend/tests/unit/analytics/__init__.py` |
+| `tests/unit/analytics/test_analytics_service.py` | `backend/tests/unit/analytics/test_analytics_service.py` |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `backend/app/main.py` | Added analytics router import and `app.include_router(analytics_router)` |
+
+### API Routes Added
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/analytics/me` | Yes (X-Session-Token) | Individual user analytics (SRS FR-9.1) |
+| GET | `/api/analytics/repositories/{repository_id}` | Yes (X-Session-Token) | Repository-level analytics (SRS FR-9.2) |
+
+### Analytics Metrics Implemented
+
+**User analytics (`/me`)**:
+- `total_analyses` — all analyses in authorized repos
+- `completed_analyses`, `degraded_analyses`, `failed_analyses` — by status
+- `unique_prs_analyzed` — distinct PRs with at least one analysis
+- `risk_distribution` — low/medium/high/critical counts (completed only)
+- `avg_confidence` — mean risk-assessment confidence score
+- `feedback_given` — helpful/unhelpful counts + percentage
+- `reviewer_stats` — recommendations made vs abstentions
+- `authorized_repository_count` — active (non-revoked) authorizations
+- `first_analysis_at`, `latest_analysis_at` — activity window
+
+**Repository analytics (`/repositories/{id}`)**:
+- All of the above plus `full_name` (owner/name), `github_repo_id`
+- `authorized_user_count` — users with active authorization
+- `feedback_received` — scoped to all analyses on this repo
+
+### Database / Migration Changes
+
+**NONE.** Existing 17-table schema fully supports all required functionality.
+All analytics computed on demand from existing tables:
+- `repository_access`, `repositories`, `pull_requests`
+- `pull_request_analyses`, `risk_assessments`
+- `reviewer_recommendations`, `feedback`
+
+Note: `user_daily_metrics` and `repository_daily_metrics` exist in the schema
+(from Step 3 migration, per DB Validation doc corrections) but are populated
+by a nightly job not yet implemented. Analytics are therefore computed on-demand
+from transactional tables, which is correct and recomputable at any time
+(LLD Part E: "derived tables can always be recomputed from source data").
+
+### Authentication and Authorization
+
+- Both endpoints require `X-Session-Token` via existing `get_current_user`
+- `/api/analytics/me`: user derived exclusively from session — client cannot
+  specify another user's ID
+- `/api/analytics/repositories/{id}`: `repository_access` checked for active
+  (non-revoked) row before any analytics data is returned
+- Unauthorized access returns HTTP 404 (IDOR-safe — same convention as feedback
+  endpoint: does not confirm whether repo exists to unauthorized callers)
+- Cross-user data leakage is structurally impossible: user analytics scoped to
+  session user's authorized repos; repo analytics guarded by access row
+
+### Test Results (exact)
+
+```
+Focused (Step 17):
+  Command: python -m pytest tests/unit/analytics/ -v
+  Result:  35 passed, 1 warning
+
+Full suite:
+  Command: python -m pytest -q
+  Result:  352 passed, 1 warning
+  (317 Steps 1–16 baseline + 35 new Step 17 tests)
+
+Ruff:
+  Command: ruff check .   (run from backend/)
+  Result:  All checks passed!
+```
+
+### Known Limitations
+
+1. Analytics computed on-demand from transactional tables (not from precomputed
+   daily rollup tables). Correct for MVP; rollup tables exist in schema for
+   future nightly-job optimization.
+2. No integration tests against real PostgreSQL.
+3. `avg_confidence` is null for repos/users with no completed analyses.
+
+### Decisions Made
+
+- On-demand SQL aggregation chosen over rollup tables: rollup tables require a
+  nightly job (not yet implemented) and on-demand is always accurate.
+- IDOR protection: 404 not 403 on unauthorized repo access, consistent with
+  the feedback endpoint convention established in Step 16.
+- No new migration: all required data exists in the current schema.
+
+### Next Recommended Step
+
+**Step 18 — Chrome Extension** or **GitHub Actions Integration**
+(per approved LLD Part S implementation sequence)
+
+---
+*Last updated: 2026-09-24 | Step 17 IMPLEMENTED AND VERIFIED | 352/352 tests | Ruff CLEAN*
