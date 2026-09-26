@@ -73,6 +73,10 @@ class AnalysisResult:
     risk_source: str
     risk_rationale: dict
     risk_confidence: float
+    # UUID of the persisted risk_assessments row — required by the feedback
+    # endpoint as prediction_reference_id when prediction_type="risk_tier".
+    # None only when the analysis failed before persisting a risk assessment.
+    risk_assessment_id: uuid.UUID | None = None
     review_suggestions: list[dict] = field(default_factory=list)
     reviewer_recommendation: dict | None = None
     checklist_items: list[dict] = field(default_factory=list)
@@ -239,6 +243,9 @@ class AnalysisOrchestrator:
             risk_source=risk_result.source,
             risk_rationale=risk_result.rationale,
             risk_confidence=risk_confidence,
+            risk_assessment_id=(
+                analysis.risk_assessment.id if analysis.risk_assessment else None
+            ),
             review_suggestions=[
                 {"focus_area": s.focus_area, "category": s.category}
                 for s in analysis.review_suggestions
@@ -304,6 +311,7 @@ class AnalysisOrchestrator:
             risk_source=risk.source if risk else "deterministic_only",
             risk_rationale=risk.rationale if risk else {"factors": []},
             risk_confidence=float(risk.confidence_score) if risk else 50.0,
+            risk_assessment_id=risk.id if risk else None,
             review_suggestions=[
                 {"focus_area": s.focus_area, "category": s.category} for s in row.review_suggestions
             ],
@@ -420,6 +428,7 @@ class AnalysisOrchestrator:
             confidence_score=risk_confidence,
         )
         db.add(risk)
+        await db.flush()  # Assign risk.id so it can be returned in AnalysisResult
 
         # Review suggestions (1:many)
         if validated_ai and validated_ai.get("review_suggestions"):
@@ -476,6 +485,7 @@ class AnalysisOrchestrator:
             select(PullRequestAnalysis)
             .where(PullRequestAnalysis.id == analysis.id)
             .options(
+                selectinload(PullRequestAnalysis.risk_assessment),
                 selectinload(PullRequestAnalysis.review_suggestions),
                 selectinload(PullRequestAnalysis.reviewer_recommendations),
                 selectinload(PullRequestAnalysis.checklist_items),

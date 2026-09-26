@@ -92,6 +92,7 @@ def _make_pr_data(
 def _make_analysis_result(
     pr_id: uuid.UUID | None = None,
     commit_sha: str = "a" * 40,
+    risk_assessment_id: uuid.UUID | None = None,
 ) -> MagicMock:
     """Return a mock AnalysisResult matching the real dataclass fields."""
     r = MagicMock()
@@ -104,6 +105,9 @@ def _make_analysis_result(
     r.risk_source = "hybrid"
     r.risk_rationale = {"factors": [{"factor": "large diff", "source": "deterministic"}]}
     r.risk_confidence = 78.5
+    # risk_assessment_id is the UUID of the persisted risk_assessments row —
+    # used as prediction_reference_id for risk_tier feedback.
+    r.risk_assessment_id = risk_assessment_id or uuid.uuid4()
     r.review_suggestions = [{"focus_area": "Check null handling", "category": "null_handling"}]
     r.reviewer_recommendation = {
         "username": "alice",
@@ -733,3 +737,209 @@ class TestSchemas:
 
         req = AnalyzeRequest()
         assert req.triggered_by == "extension"
+
+
+# ── Step 18.1: risk_assessment_id in AnalysisResponse ─────────────────────────
+
+
+class TestRiskAssessmentIdInAnalysisResponse:
+    """
+    Verify that AnalysisResponse exposes risk_assessment_id so the Chrome
+    Extension can submit risk_tier feedback with a valid prediction_reference_id.
+
+    This is the integration gap fixed in Step 18.1:
+      AnalysisResponse.risk_assessment_id → POST /api/analyses/{id}/feedback
+        { prediction_type: "risk_tier", prediction_reference_id: <risk_assessment_id> }
+    """
+
+    def test_analysis_response_schema_has_risk_assessment_id_field(self):
+        """AnalysisResponse Pydantic model must declare risk_assessment_id."""
+
+        from app.pull_requests.schemas import AnalysisResponse
+
+        fields = AnalysisResponse.model_fields
+        assert "risk_assessment_id" in fields, (
+            "AnalysisResponse must expose risk_assessment_id for feedback integration"
+        )
+
+    def test_analysis_response_risk_assessment_id_is_optional_uuid(self):
+        """risk_assessment_id must be uuid.UUID | None."""
+
+        from app.pull_requests.schemas import AnalysisResponse
+
+        field_info = AnalysisResponse.model_fields["risk_assessment_id"]
+        # Default must be None (graceful for failed/degraded analyses)
+        assert field_info.default is None
+
+    def test_analysis_response_serialises_risk_assessment_id(self):
+        """AnalysisResponse must serialise risk_assessment_id as a UUID string."""
+        import uuid
+        from datetime import UTC, datetime
+
+        from app.pull_requests.schemas import AnalysisResponse
+
+        risk_id = uuid.uuid4()
+        response = AnalysisResponse(
+            analysis_id=uuid.uuid4(),
+            pull_request_id=uuid.uuid4(),
+            commit_sha="a" * 40,
+            status="completed",
+            summary="Test PR",
+            risk_tier="high",
+            risk_source="hybrid",
+            risk_rationale={"factors": []},
+            risk_confidence=85.0,
+            risk_assessment_id=risk_id,
+            triggered_by="extension",
+            model_name="gemini-2.5-flash",
+            prompt_template_version="v1",
+            created_at=datetime.now(UTC),
+        )
+        data = response.model_dump()
+        assert data["risk_assessment_id"] == risk_id
+
+    def test_analysis_response_risk_assessment_id_none_for_failed_analysis(self):
+        """risk_assessment_id is None when the analysis failed before persisting risk."""
+        import uuid
+        from datetime import UTC, datetime
+
+        from app.pull_requests.schemas import AnalysisResponse
+
+        response = AnalysisResponse(
+            analysis_id=uuid.uuid4(),
+            pull_request_id=uuid.uuid4(),
+            commit_sha="b" * 40,
+            status="failed",
+            summary=None,
+            risk_tier="low",
+            risk_source="deterministic_only",
+            risk_rationale={},
+            risk_confidence=50.0,
+            risk_assessment_id=None,
+            triggered_by="extension",
+            model_name="gemini-2.5-flash",
+            prompt_template_version="v1",
+            created_at=datetime.now(UTC),
+        )
+        assert response.risk_assessment_id is None
+
+    def test_analysis_result_dataclass_has_risk_assessment_id(self):
+        """AnalysisResult dataclass must have risk_assessment_id field."""
+        from dataclasses import fields as dc_fields
+
+        from app.analysis.orchestrator import AnalysisResult
+
+        field_names = {f.name for f in dc_fields(AnalysisResult)}
+        assert "risk_assessment_id" in field_names, (
+            "AnalysisResult dataclass must have risk_assessment_id"
+        )
+
+    def test_analysis_result_risk_assessment_id_defaults_none(self):
+        """AnalysisResult.risk_assessment_id defaults to None."""
+        import uuid
+
+        from app.analysis.orchestrator import AnalysisResult
+
+        result = AnalysisResult(
+            analysis_id=uuid.uuid4(),
+            pull_request_id=uuid.uuid4(),
+            commit_sha="c" * 40,
+            status="completed",
+            summary=None,
+            risk_tier="low",
+            risk_source="deterministic_only",
+            risk_rationale={},
+            risk_confidence=50.0,
+        )
+        assert result.risk_assessment_id is None
+
+    def test_analyze_endpoint_returns_risk_assessment_id(self, auth_client):
+        """
+        POST .../analyze must return risk_assessment_id in the JSON response.
+        The risk_assessment_id is a non-None UUID for a completed analysis.
+        """
+        import uuid
+        from unittest.mock import patch
+
+        risk_id = uuid.uuid4()
+        mock_result = _make_analysis_result(risk_assessment_id=risk_id)
+
+        with patch(
+            "app.api.pull_requests.analyze_pull_request",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            resp = auth_client.post(
+                f"/api/repositories/{uuid.uuid4()}/pulls/42/analyze",
+                json={"triggered_by": "extension"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "risk_assessment_id" in body
+        assert body["risk_assessment_id"] == str(risk_id)
+
+    def test_analyze_endpoint_risk_assessment_id_is_uuid_string(self, auth_client):
+        """risk_assessment_id in the JSON response must be a valid UUID string."""
+        import uuid
+        from unittest.mock import patch
+
+        risk_id = uuid.uuid4()
+        mock_result = _make_analysis_result(risk_assessment_id=risk_id)
+
+        with patch(
+            "app.api.pull_requests.analyze_pull_request",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            resp = auth_client.post(
+                f"/api/repositories/{uuid.uuid4()}/pulls/42/analyze",
+                json={},
+            )
+
+        body = resp.json()
+        # Must be parseable as a UUID
+        parsed = uuid.UUID(body["risk_assessment_id"])
+        assert parsed == risk_id
+
+    def test_feedback_schema_prediction_type_risk_tier_accepted(self):
+        """SubmitFeedbackRequest accepts prediction_type='risk_tier' with a UUID."""
+        import uuid
+
+        from app.feedback.schemas import SubmitFeedbackRequest
+
+        req = SubmitFeedbackRequest(
+            prediction_type="risk_tier",
+            prediction_reference_id=uuid.uuid4(),
+            rating="helpful",
+        )
+        assert req.prediction_type.value == "risk_tier"
+        assert req.rating.value == "helpful"
+
+    def test_feedback_schema_requires_prediction_reference_id(self):
+        """SubmitFeedbackRequest must reject a missing prediction_reference_id."""
+        import pytest
+        from pydantic import ValidationError as PydanticValidationError
+
+        from app.feedback.schemas import SubmitFeedbackRequest
+
+        with pytest.raises(PydanticValidationError):
+            SubmitFeedbackRequest(
+                prediction_type="risk_tier",
+                # prediction_reference_id intentionally omitted
+                rating="helpful",
+            )
+
+    def test_feedback_schema_rejects_invalid_uuid(self):
+        """SubmitFeedbackRequest must reject a non-UUID prediction_reference_id."""
+        import pytest
+        from pydantic import ValidationError as PydanticValidationError
+
+        from app.feedback.schemas import SubmitFeedbackRequest
+
+        with pytest.raises(PydanticValidationError):
+            SubmitFeedbackRequest(
+                prediction_type="risk_tier",
+                prediction_reference_id="not-a-uuid",
+                rating="helpful",
+            )

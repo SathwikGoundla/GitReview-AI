@@ -205,6 +205,7 @@ async def analyze_pr(
         risk_source=result.risk_source,
         risk_rationale=result.risk_rationale,
         risk_confidence=result.risk_confidence,
+        risk_assessment_id=result.risk_assessment_id,
         review_suggestions=[
             ReviewSuggestionSchema(
                 focus_area=s["focus_area"],

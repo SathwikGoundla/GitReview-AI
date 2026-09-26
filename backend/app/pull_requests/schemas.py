@@ -97,6 +97,11 @@ class AnalysisResponse(BaseModel):
     """
     Full analysis result returned by POST .../analyze.
     Maps directly from AnalysisResult dataclass.
+
+    risk_assessment_id is the UUID of the persisted risk_assessments row.
+    Pass this as prediction_reference_id when submitting feedback with
+    prediction_type="risk_tier" to POST /api/analyses/{analysis_id}/feedback.
+    It is None only when the analysis failed before persisting a risk assessment.
     """
 
     analysis_id: uuid.UUID
@@ -108,6 +113,13 @@ class AnalysisResponse(BaseModel):
     risk_source: str = Field(description="deterministic_only | hybrid")
     risk_rationale: dict
     risk_confidence: float = Field(ge=0.0, le=100.0)
+    risk_assessment_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "UUID of the persisted risk_assessments row. "
+            "Use as prediction_reference_id when submitting risk_tier feedback."
+        ),
+    )
     review_suggestions: list[ReviewSuggestionSchema] = Field(default_factory=list)
     reviewer_recommendation: ReviewerRecommendationSchema | None = None
     checklist_items: list[ChecklistItemSchema] = Field(default_factory=list)

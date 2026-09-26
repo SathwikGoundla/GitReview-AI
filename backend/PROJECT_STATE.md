@@ -816,3 +816,383 @@ Ruff:
 
 ---
 *Last updated: 2026-09-24 | Step 17 IMPLEMENTED AND VERIFIED | 352/352 tests | Ruff CLEAN*
+
+---
+
+## Step 18 — Chrome Extension Foundation and GitHub PR Review UI
+
+**Status: IMPLEMENTED AND VERIFIED**
+**Date: 2026-09-25**
+
+### Implementation Summary
+
+Chrome Extension (Manifest V3) that consumes the existing FastAPI backend.
+All API contracts are derived from the actual backend Pydantic schemas —
+no response fields were invented.
+
+### Extension Architecture
+
+```
+extension/
+├── public/manifest.json          # MV3 manifest (storage, activeTab permissions only)
+├── public/icon{16,48,128}.png    # Solid #2563eb colour icons
+├── src/types/index.ts            # TypeScript interfaces mirroring all backend schemas
+├── src/auth/session.ts           # chrome.storage.local session management
+├── src/api/client.ts             # Centralized API client (all endpoints, typed errors)
+├── src/content/github-pr.ts     # GitHub PR URL detection + SPA navigation
+├── src/background/service-worker.ts  # OAuth interception, session routing
+├── src/popup/App.tsx             # Main React popup (5 views)
+├── src/popup/main.tsx            # React entry point
+├── src/components/
+│   ├── RiskBadge.tsx             # Colour-coded risk tier badge
+│   ├── ConfidenceBar.tsx         # 0–100% bar (green/amber/red bands)
+│   ├── RiskRationale.tsx         # Collapsible rationale factors
+│   ├── ReviewerCard.tsx          # Reviewer recommendation or abstention
+│   ├── Checklist.tsx             # Adaptive checklist with local completion
+│   └── FeedbackForm.tsx          # Helpful/unhelpful feedback submission
+└── src/__tests__/
+    ├── github-pr.test.ts         # 18 URL parsing tests
+    ├── session.test.ts           # 11 session storage tests
+    ├── api-client.test.ts        # 20 error mapping + success path tests
+    ├── types.test.ts             # 11 contract alignment tests
+    └── components.test.tsx       # 26 React component render tests
+```
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `extension/package.json` | npm config: Vite, React 18, TypeScript, Vitest |
+| `extension/tsconfig.json` | Strict TypeScript, ES2020, react-jsx |
+| `extension/vite.config.ts` | Multi-entry build: background, content, popup |
+| `extension/popup.html` | HTML shell for React popup |
+| `extension/.env.example` | VITE_BACKEND_URL placeholder (no secrets) |
+| `extension/public/manifest.json` | MV3: storage + activeTab permissions only |
+| `extension/public/icon{16,48,128}.png` | Minimal valid PNG icons (#2563eb) |
+| `extension/src/types/index.ts` | All types from backend Pydantic schemas |
+| `extension/src/auth/session.ts` | Session save/get/clear/token/isAuthenticated |
+| `extension/src/api/client.ts` | Typed client for all 12 backend endpoints |
+| `extension/src/content/github-pr.ts` | extractPRContext + SPA nav detection |
+| `extension/src/background/service-worker.ts` | OAuth tab interception, messaging |
+| `extension/src/popup/App.tsx` | Main app: 5 views, all flows wired |
+| `extension/src/popup/main.tsx` | React.createRoot entry point |
+| `extension/src/components/RiskBadge.tsx` | low/medium/high/critical badge |
+| `extension/src/components/ConfidenceBar.tsx` | Score bar + band label |
+| `extension/src/components/RiskRationale.tsx` | Collapsible rationale factors |
+| `extension/src/components/ReviewerCard.tsx` | Reviewer or abstention |
+| `extension/src/components/Checklist.tsx` | Items + local completion state |
+| `extension/src/components/FeedbackForm.tsx` | helpful/unhelpful rating form |
+| `extension/src/test-setup.ts` | Chrome API mock + beforeEach storage clear |
+| `extension/src/__tests__/github-pr.test.ts` | 18 URL parsing tests |
+| `extension/src/__tests__/session.test.ts` | 11 session tests |
+| `extension/src/__tests__/api-client.test.ts` | 20 API client tests |
+| `extension/src/__tests__/types.test.ts` | 11 type contract tests |
+| `extension/src/__tests__/components.test.tsx` | 26 component render tests |
+| `extension/README.md` | Build, install, configure instructions |
+
+### API Contracts Consumed
+
+All contracts verified from actual backend source (not assumptions):
+
+| Method | Path | Auth | Used for |
+|--------|------|------|---------|
+| GET | `/api/auth/login` | No | OAuth initiation → authorize_url + state |
+| GET | `/api/auth/callback` | No (X-OAuth-State) | Token exchange after OAuth |
+| POST | `/api/auth/logout` | Yes | Session revocation |
+| GET | `/api/auth/me` | Yes | Validate session on popup load |
+| GET | `/api/repositories` | Yes | Find repository_id for current PR |
+| POST | `/api/repositories/authorize` | Yes | Authorize unrecognized repository |
+| DELETE | `/api/repositories/{id}/access` | Yes | Revoke access |
+| GET | `/api/repositories/{id}/pulls` | Yes | List PRs |
+| GET | `/api/repositories/{id}/pulls/{n}` | Yes | PR detail |
+| POST | `/api/repositories/{id}/pulls/{n}/analyze` | Yes | Trigger analysis |
+| POST | `/api/analyses/{id}/feedback` | Yes | Submit helpful/unhelpful rating |
+| GET | `/api/analytics/me` | Yes | User analytics (client prepared) |
+
+### Session Handling
+
+- Token stored in `chrome.storage.local` under key `gitreview_session`
+- Only opaque session token stored; GitHub OAuth token remains server-side
+- OAuth state (CSRF protection) stored under `gitreview_oauth_state` before tab open
+- State retrieved by service worker on callback tab interception
+- 401 response clears session and shows re-auth prompt
+
+### Manifest V3 Permissions
+
+- `storage` — session token in chrome.storage.local
+- `activeTab` — read active tab URL for PR context detection
+- Host permission: `https://github.com/*` only (no `<all_urls>`)
+
+### Test Results
+
+```
+Frontend (extension/):
+  Command: npm test
+  Result:  86 passed (86)
+  Files:   5 test files
+    github-pr.test.ts    18 tests — URL parsing (valid + invalid + edge cases)
+    session.test.ts      11 tests — storage save/get/clear/token/isAuthenticated
+    api-client.test.ts   20 tests — 401/403/404/422/429/5xx/network + success
+    types.test.ts        11 tests — backend schema contract alignment
+    components.test.tsx  26 tests — RiskBadge, ConfidenceBar, ReviewerCard,
+                                    Checklist, FeedbackForm renders
+
+Backend (backend/):
+  Command: python -m pytest -q
+  Result:  352 passed, 1 warning  ← unchanged from Step 17 baseline
+
+Ruff:
+  Command: ruff check .  (run from backend/)
+  Result:  All checks passed!
+```
+
+### Build Result
+
+```
+Command: npm run build
+Output:
+  dist/popup.html       0.95 kB
+  dist/content.js       0.72 kB
+  dist/background.js    1.23 kB
+  dist/popup.js       160.87 kB (React app)
+  dist/manifest.json  (copied from public/)
+  dist/icon*.png      (copied from public/)
+Built in 1.34s — no errors, no TypeScript errors
+```
+
+### Security
+
+- No hardcoded secrets in any source file
+- No `.env` committed (`.env.example` only)
+- OAuth tokens never stored client-side (server-side Fernet encryption)
+- Session token is opaque; raw value never logged
+- `<all_urls>` permission NOT requested
+- Content-Security-Policy in popup.html: `script-src 'self'` only
+- GitHub content treated as untrusted data (prompt injection handled server-side)
+
+### Known Limitations
+
+1. **Feedback prediction UUIDs not in AnalysisResponse**: The backend's
+   `AnalysisResponse` schema does not expose `risk_assessment_id`,
+   `reviewer_recommendation_id`, or `checklist_item_id` separately.
+   The feedback endpoint requires `prediction_reference_id` pointing at
+   the specific row UUID. FeedbackForm shows a clear "not available" message
+   and is fully implemented structurally — enabling it requires the backend
+   to add these IDs to `AnalysisResponse` (a backend schema change, not
+   a frontend change).
+
+2. **Checklist completion is local-only**: The `checklist_item_completions`
+   table exists in the schema; the API endpoint for PATCH completion is
+   not yet implemented. Completion state is tracked in React local state
+   with a clear "local to this session only" caveat shown in the UI.
+
+3. **No analytics dashboard in popup**: Analytics API client methods are
+   fully implemented in `api/client.ts`; a popup analytics view is deferred
+   to a future step.
+
+4. **OAuth callback tab**: Requires backend running and `GITHUB_REDIRECT_URI`
+   reachable from browser. Deployment-dependent; clearly documented.
+
+### Decisions Made
+
+- React inline styles (not CSS modules or Tailwind): zero additional build
+  deps, works reliably in Chrome Extension CSP environment.
+- Vitest + jsdom + @testing-library/react: matches the ecosystem (Vite project)
+  and avoids Jest configuration overhead.
+- `extractPRContext` exported from content script so the popup can call it
+  directly on the active tab URL — avoids message-passing roundtrip.
+- `VITE_BACKEND_URL` injected at build time via Vite env — clean separation
+  between dev (localhost:8000) and production (Render URL).
+
+### Next Recommended Step
+
+**Step 19 — GitHub Actions Integration** (LLD Part S, step 15/20)
+OR
+**Backend: expose prediction UUIDs in AnalysisResponse** to enable feedback
+submission from the extension (small backend schema addition).
+
+---
+*Last updated: 2026-09-25 | Step 18 IMPLEMENTED AND VERIFIED | 352/352 backend tests | 86/86 frontend tests | Ruff CLEAN | Build CLEAN*
+
+---
+
+## Step 18.1 — Feedback Integration (AnalysisResponse → FeedbackForm → Backend)
+
+**Status: IMPLEMENTED AND VERIFIED**
+**Date: 2026-09-26**
+
+### Problem
+
+The `FeedbackForm` component in the Chrome Extension could not submit feedback
+because `POST /api/analyses/{analysis_id}/feedback` requires a
+`prediction_reference_id` — the UUID of the specific prediction row being rated
+(e.g. `risk_assessments.id` for `prediction_type="risk_tier"`).
+
+`AnalysisResponse` did not expose this UUID, so `FeedbackForm` showed a
+"not available" placeholder instead of submitting.
+
+### Root Cause
+
+Traced through the full data flow:
+
+1. `AnalysisOrchestrator._persist_result()` creates a `RiskAssessment` ORM row
+   with a server-generated UUID (`risk.id`).
+2. `AnalysisResult` dataclass (returned by the orchestrator) had no
+   `risk_assessment_id` field — the UUID was computed and persisted but never
+   propagated to the caller.
+3. The router's `AnalysisResponse` construction mapped `AnalysisResult` fields
+   explicitly and therefore also omitted the UUID.
+4. `FeedbackForm` received `predictionReferenceId=null` and showed a placeholder.
+
+No database schema change was needed. The UUID already existed in the
+`risk_assessments` table; it just wasn't being returned to the client.
+
+### Existing Backend Identifier
+
+```
+risk_assessments.id  (UUID, gen_random_uuid(), populated on every analysis)
+```
+
+The feedback endpoint validates this exactly:
+```python
+# feedback/service.py _validate_prediction_reference()
+stmt = select(RiskAssessment).where(
+    RiskAssessment.id == prediction_reference_id,
+    RiskAssessment.analysis_id == analysis_id,
+)
+```
+
+### Backend Changes (3 files, no DB migration)
+
+**`backend/app/analysis/orchestrator.py`**
+- Added `risk_assessment_id: uuid.UUID | None = None` field to `AnalysisResult` dataclass.
+- Added `await db.flush()` after `db.add(risk)` in `_persist_result()` to assign
+  `risk.id` before building the return value.
+- Added `selectinload(PullRequestAnalysis.risk_assessment)` to the reload query
+  inside `_persist_result()` so `analysis.risk_assessment` is available.
+- Populated `risk_assessment_id=analysis.risk_assessment.id if analysis.risk_assessment else None`
+  in both the fresh-analysis and cache-hit `AnalysisResult` constructions.
+
+**`backend/app/pull_requests/schemas.py`**
+- Added `risk_assessment_id: uuid.UUID | None = Field(default=None, ...)` to
+  `AnalysisResponse` with documentation of its intended use for feedback.
+
+**`backend/app/api/pull_requests.py`**
+- Added `risk_assessment_id=result.risk_assessment_id` to the explicit
+  `AnalysisResponse(...)` construction in the `analyze_pr` route handler.
+
+**`backend/tests/unit/pull_requests/test_pull_request_service.py`**
+- Updated `_make_analysis_result()` factory to accept and set `risk_assessment_id`.
+- Added `TestRiskAssessmentIdInAnalysisResponse` class with 11 new tests:
+  - Schema field presence
+  - Optional UUID type
+  - Serialisation as UUID string
+  - Null for failed analyses
+  - Dataclass field presence
+  - Dataclass default=None
+  - Router endpoint returns correct UUID
+  - UUID string is valid UUID
+  - Feedback schema accepts risk_tier
+  - Feedback schema requires prediction_reference_id
+  - Feedback schema rejects invalid UUID
+
+### Frontend Changes (3 files)
+
+**`extension/src/types/index.ts`**
+- Added `risk_assessment_id: string | null` to `AnalysisResponse` interface
+  with documentation linking it to the feedback endpoint contract.
+
+**`extension/src/components/FeedbackForm.tsx`**
+- Rewrote entirely: removed the stale "not yet exposed" limitation message.
+- When `predictionReferenceId` is non-null: submits real POST request.
+- When `predictionReferenceId` is null: shows "Feedback unavailable" (graceful
+  for degraded/failed analyses that have no risk_assessments row).
+- Added `ApiValidationError` handling for 422 responses.
+- Added "Retry" button after errors.
+- Added "Change" button after success (re-enables the form for upsert).
+- Added "Saving…" indicator during submission.
+
+**`extension/src/popup/App.tsx`**
+- Changed `predictionReferenceId={null}` to `predictionReferenceId={analysis.risk_assessment_id}`
+  in the `<FeedbackForm>` call inside `AnalysisView`.
+
+**`extension/src/__tests__/components.test.tsx`**
+- Added 11 `FeedbackForm` tests covering:
+  - Renders rating buttons when reference ID is present
+  - Shows unavailable when reference ID is null
+  - Calls API with correct payload (helpful)
+  - Calls API with correct payload (unhelpful)
+  - Shows success state with Change option
+  - Shows error + Retry on 401
+  - Shows error + Retry on 422
+  - Shows error + Retry on network failure
+  - Retry re-enables the form
+  - Calls onFeedbackSubmitted callback
+
+**`extension/src/__tests__/types.test.ts`**
+- Added `risk_assessment_id` to the AnalysisResponse type contract test.
+- Added test for null `risk_assessment_id` (degraded analysis case).
+
+### API Contract (now complete)
+
+```
+POST /api/repositories/{repository_id}/pulls/{pull_number}/analyze
+→ AnalysisResponse {
+    analysis_id:        UUID          ← scope for feedback endpoint
+    risk_assessment_id: UUID | null   ← prediction_reference_id for risk_tier feedback
+    risk_tier:          string
+    risk_confidence:    float
+    ...
+  }
+
+POST /api/analyses/{analysis_id}/feedback
+  Body: {
+    prediction_type:         "risk_tier"
+    prediction_reference_id: <risk_assessment_id from AnalysisResponse>
+    rating:                  "helpful" | "unhelpful"
+  }
+→ FeedbackResponse { feedback_id, analysis_id, rating, ... }
+```
+
+### Database Changes
+
+NONE. No migration required.
+The `risk_assessments.id` column already existed. Only the propagation path
+(orchestrator → AnalysisResult → AnalysisResponse → frontend) was missing.
+
+### Test Results
+
+```
+Backend:
+  Before: 352 passed, 1 warning
+  After:  363 passed, 1 warning  (+11 new tests)
+  Ruff:   All checks passed!
+
+Frontend:
+  Before: 86 passed (5 files)
+  After:  97 passed (5 files)   (+11 new FeedbackForm tests)
+  Build:  SUCCESS — dist/ clean, no TypeScript errors
+```
+
+### Security Check
+
+- No secrets, tokens, or credentials added to any source file.
+- No `.env` committed.
+- `risk_assessment_id` is an internal UUID, not a sensitive credential.
+- The backend validates `prediction_reference_id` against `analysis_id` and
+  the user's repository access before persisting feedback (existing IDOR protection
+  is unchanged).
+
+### Remaining Limitations
+
+- Checklist completion persistence (PATCH endpoint) is still deferred —
+  `checklist_item_completions` table exists but no API endpoint yet.
+- `reviewer_recommendation_id` and `checklist_item_id` are not yet exposed in
+  `AnalysisResponse` (only `risk_assessment_id` was needed for the MVP feedback
+  flow; the others can be added similarly when needed).
+- Feedback for `reviewer_recommendation` and `checklist_item` prediction types
+  is fully implemented in backend and API client but the extension UI currently
+  only shows feedback for `risk_tier`.
+
+---
+*Last updated: 2026-09-26 | Step 18.1 IMPLEMENTED AND VERIFIED | 363/363 backend | 97/97 frontend | Ruff CLEAN | Build CLEAN*
