@@ -1196,3 +1196,168 @@ Frontend:
 
 ---
 *Last updated: 2026-09-26 | Step 18.1 IMPLEMENTED AND VERIFIED | 363/363 backend | 97/97 frontend | Ruff CLEAN | Build CLEAN*
+
+---
+
+## Step 19 — GitHub Actions Integration
+
+**Status: IMPLEMENTED AND VERIFIED**
+**Date: 2026-09-26**
+**Backend tests: 418 / 418 passing (+55 new)**
+**Frontend tests: 97 / 97 passing (unchanged)**
+**Ruff: CLEAN**
+
+### Objective
+
+Implement the GitHub Actions Integration (LLD A.20 / HLD Section 11) as a thin
+adapter in front of the existing AnalysisOrchestrator. A GitHub Actions workflow
+triggers on PR events, calls the backend, and posts the result as a PR comment
+with a risk tier label.
+
+### Architecture
+
+```
+GitHub PR event (opened/synchronize/reopened)
+        ↓
+.github/workflows/gitreview-ai.yml
+        ↓  (POST /api/actions/analyze with X-Actions-Secret + X-GitHub-Token)
+app/api/actions.py  (validate secret → delegate)
+        ↓
+app/actions_integration/service.py  (validate secret, lookup repo, run orchestrator)
+        ↓
+EXISTING AnalysisOrchestrator.run_analysis()  ← REUSED, NOT DUPLICATED
+        ↓
+ActionsAnalysisResponse { status, risk_tier, comment_markdown, ... }
+        ↓  (returned to workflow)
+actions/github-script  (post or edit PR comment + apply risk label)
+```
+
+### Key Design Decisions
+
+1. **Thin adapter, not a second engine**: LLD A.20 is followed exactly.
+   `handle_actions_request()` looks up the repo, then calls the same
+   `AnalysisOrchestrator.run_analysis()` used by the extension path.
+   No AI logic, no risk engine, no checklist logic is duplicated.
+
+2. **Shared secret auth**: Per-deployment secret in `X-Actions-Secret` header,
+   compared with `hmac.compare_digest` (timing-safe). If `ACTIONS_SHARED_SECRET`
+   is empty the endpoint rejects all requests — disabled by default.
+
+3. **GitHub token from workflow**: The Actions workflow's `GITHUB_TOKEN` is sent
+   in `X-GitHub-Token`. It is used to build a `GitHubApiClient` for the
+   orchestrator's data fetch. It is never stored in the database.
+
+4. **Repository must be pre-authorized**: The repository must exist in the
+   `repositories` table (i.e., a user must have authorized it via the extension
+   first). This enforces the opted-in design from the PRD.
+
+5. **Idempotency**: The workflow searches for an existing `<!-- gitreview-ai-bot -->`
+   marker comment and edits it in place. This is handled entirely by the workflow
+   JavaScript step using `GITHUB_TOKEN` — the backend does not track comment IDs
+   and no DB schema change was needed.
+
+6. **Concurrency group**: The workflow uses `cancel-in-progress: true` to prevent
+   out-of-order comment edits when commits are pushed rapidly (HLD Section 11).
+
+7. **No DB schema change**: The existing 17-table schema supports all required
+   functionality. No new migration was created.
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `app/actions_integration/__init__.py` | Package marker |
+| `app/actions_integration/schemas.py` | ActionsAnalyzeRequest, ActionsAnalysisResponse |
+| `app/actions_integration/service.py` | Secret validation, repo lookup, comment formatter, main handler |
+| `app/api/actions.py` | FastAPI router — POST /api/actions/analyze |
+| `tests/unit/actions_integration/__init__.py` | Test package marker |
+| `tests/unit/actions_integration/test_actions_integration.py` | 55 tests |
+| `.github/workflows/gitreview-ai.yml` | GitHub Actions workflow |
+| `backend/.env.example` | Added ACTIONS_SHARED_SECRET documentation |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `app/main.py` | Added `actions_router` import and `app.include_router(actions_router)` |
+| `app/core/config.py` | Added `actions_shared_secret: str` setting |
+| `app/core/exceptions.py` | Added `ActionsAuthError` exception class |
+
+### API Route Added
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| POST | `/api/actions/analyze` | X-Actions-Secret header | GitHub Actions workflow → PR analysis |
+
+### Database Changes
+
+NONE. No new tables. No new migration. The existing 17-table schema is used as-is.
+
+### Security Verified
+
+- Shared secret compared with `hmac.compare_digest` (timing-safe, not `==`)
+- Secret never logged, never in error responses, never in PR comments
+- `GITHUB_TOKEN` not stored in DB — used only for the duration of one analysis
+- `ACTIONS_SHARED_SECRET` defaults to empty string (endpoint disabled until configured)
+- 401 response message is generic (does not distinguish "wrong secret" from "not set")
+
+### Test Results (exact)
+
+```
+Step 19 focused:
+  Command: python -m pytest tests/unit/actions_integration/ -v
+  Result:  55 passed, 1 warning
+
+Full backend suite:
+  Command: python -m pytest tests/ -q
+  Result:  418 passed, 1 warning
+  Breakdown:
+    Steps 1-18.1 baseline:  363 tests
+    Step 19 new tests:       55 tests
+    Total:                  418 tests
+
+Ruff:
+  Command: ruff check .
+  Result:  All checks passed! (6 issues auto-fixed)
+
+Frontend (untouched):
+  Command: npm test -- --run
+  Result:  97 passed (5 files) — unchanged
+```
+
+### Known Limitations
+
+1. **Live GitHub validation NOT VERIFIED**: The workflow cannot be executed
+   in this Claude session (no real GitHub repository, no Actions runner).
+   The workflow file is syntactically correct and logically validated via static
+   tests. Live end-to-end testing requires deploying the backend and configuring
+   GITREVIEW_BACKEND_URL + GITREVIEW_SHARED_SECRET in a real repository.
+
+2. **Repository pre-authorization required**: If no GitReview AI user has
+   authorized the repository via the extension, the workflow step exits with a
+   404 (not an error — the workflow logs a warning and exits 0 so the PR is
+   not blocked).
+
+3. **Backend must be publicly reachable**: The Actions runner calls the backend
+   over HTTPS. A Render free-tier backend may experience a cold start delay on
+   the first request. The workflow uses `--max-time 120` and `--retry 2` to
+   handle this.
+
+4. **Label creation requires write permission**: The workflow creates `risk: *`
+   labels if they don't exist. The `GITHUB_TOKEN` has `pull-requests: write`
+   permission which covers label creation on issues/PRs but not repository-level
+   label management in all configurations. If label creation fails, the workflow
+   logs a warning and continues.
+
+### Next Step
+
+**Step 20 — Deployment & CI/CD**
+- Render deployment configuration for the FastAPI backend
+- Supabase database provisioning
+- GitHub OAuth App configuration for production
+- Production environment variables
+- CI/CD pipeline: lint + test on push, deploy on merge to main
+- README deployment guide
+
+---
+*Last updated: 2026-09-26 | Step 19 IMPLEMENTED AND VERIFIED | 418/418 backend | 97/97 frontend | Ruff CLEAN*

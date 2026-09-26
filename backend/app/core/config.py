@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     reviewer_review_history_weight: float = Field(default=0.3)
     reviewer_commit_history_weight: float = Field(default=0.1)
 
+    # --- GitHub Actions Integration ---
+    # Shared secret for authenticating GitHub Actions workflow requests.
+    # Each deployment should use a random secret stored in GitHub repository Secrets
+    # (GITREVIEW_SHARED_SECRET) and in the backend's Render environment variables.
+    # An empty string disables the Actions endpoint in production.
+    actions_shared_secret: str = Field(default="")
+
     # --- Retention ---
     analysis_retention_days: int = Field(default=90)
 

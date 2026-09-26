@@ -137,3 +137,13 @@ class RepositoryNotFoundError(GitReviewError):
 class PullRequestNotFoundError(GitReviewError):
     http_status = 404
     error_code = "pull_request_not_found"
+
+
+# ── GitHub Actions Integration ─────────────────────────────────────────────────
+
+
+class ActionsAuthError(GitReviewError):
+    """Raised when the GitHub Actions shared secret is missing or invalid."""
+
+    http_status = 401
+    error_code = "actions_auth_error"

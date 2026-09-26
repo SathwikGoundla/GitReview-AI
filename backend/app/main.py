@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.actions import router as actions_router
 from app.api.analytics import router as analytics_router
 from app.api.auth import router as auth_router
 from app.api.feedback import router as feedback_router
@@ -76,6 +77,7 @@ app.include_router(repositories_router)
 app.include_router(pull_requests_router)
 app.include_router(analytics_router)
 app.include_router(feedback_router)
+app.include_router(actions_router)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────

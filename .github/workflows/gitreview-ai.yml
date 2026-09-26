@@ -1,0 +1,288 @@
+# GitReview AI — Automated PR Analysis Workflow
+#
+# Triggers on PR events, calls the GitReview AI backend, and posts
+# the analysis result as a PR comment with a risk label.
+#
+# Required GitHub repository Secrets:
+#   GITREVIEW_BACKEND_URL   — Full HTTPS URL of your deployed backend
+#                             (e.g. https://your-app.onrender.com)
+#   GITREVIEW_SHARED_SECRET — Shared secret matching ACTIONS_SHARED_SECRET
+#                             in the backend's environment variables.
+#                             Generate with: openssl rand -hex 32
+#
+# The workflow uses the built-in GITHUB_TOKEN for posting comments and
+# labels — no additional GitHub personal access token is needed.
+#
+# Idempotency (HLD Section 11):
+#   On each run the workflow searches for an existing GitReview AI comment
+#   (identified by an HTML marker) and edits it in place. This means a PR
+#   that receives 5 commits will always have exactly one GitReview AI comment,
+#   updated to reflect the latest analysis.
+#
+# Permissions (least-privilege, HLD Section 11):
+#   pull-requests: write  — post and edit PR comments, apply labels
+#   contents: read        — check out repository for context (not needed
+#                           for analysis itself — backend fetches from GitHub)
+#
+# Security:
+#   - GITREVIEW_SHARED_SECRET is accessed only from GitHub Secrets; never
+#     printed, never included in log output.
+#   - GITHUB_TOKEN is scoped to this repository and expires after the run.
+#   - The backend URL is not a secret but should be treated as configuration.
+#   - No source code or diff is transmitted by the workflow — the backend
+#     fetches diff data directly from GitHub using the provided GITHUB_TOKEN.
+
+name: GitReview AI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Concurrency group: cancel a superseded in-progress run for the same PR
+# to prevent out-of-order comment edits when commits are pushed quickly.
+# (HLD Section 11 — Rate Limiting / duplicate prevention)
+concurrency:
+  group: gitreview-ai-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze Pull Request
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1: Call the GitReview AI backend ────────────────────────────────
+      - name: Request PR analysis
+        id: analysis
+        shell: bash
+        env:
+          BACKEND_URL: ${{ secrets.GITREVIEW_BACKEND_URL }}
+          SHARED_SECRET: ${{ secrets.GITREVIEW_SHARED_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Validate required configuration
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::error::GITREVIEW_BACKEND_URL secret is not set."
+            echo "::error::Add it in repository Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          if [ -z "$SHARED_SECRET" ]; then
+            echo "::error::GITREVIEW_SHARED_SECRET secret is not set."
+            exit 1
+          fi
+
+          echo "Requesting analysis for ${OWNER}/${REPO_NAME} PR #${PR_NUMBER} @ ${COMMIT_SHA:0:7}"
+
+          # Call the backend analysis endpoint
+          HTTP_RESPONSE=$(curl \
+            --silent \
+            --show-error \
+            --max-time 120 \
+            --retry 2 \
+            --retry-delay 5 \
+            --write-out "\n%{http_code}" \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "X-Actions-Secret: ${SHARED_SECRET}" \
+            --header "X-GitHub-Token: ${GITHUB_TOKEN}" \
+            --data "{
+              \"owner\": \"${OWNER}\",
+              \"name\": \"${REPO_NAME}\",
+              \"pr_number\": ${PR_NUMBER},
+              \"commit_sha\": \"${COMMIT_SHA}\"
+            }" \
+            "${BACKEND_URL}/api/actions/analyze" 2>&1)
+
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -1)
+          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | head -n -1)
+
+          echo "Backend response status: ${HTTP_STATUS}"
+
+          if [ "$HTTP_STATUS" -eq 401 ]; then
+            echo "::error::Authentication failed. Check that GITREVIEW_SHARED_SECRET"
+            echo "::error::in GitHub Secrets matches ACTIONS_SHARED_SECRET in the backend."
+            exit 1
+          fi
+
+          if [ "$HTTP_STATUS" -eq 404 ]; then
+            echo "::warning::Repository ${OWNER}/${REPO_NAME} has not been authorized in GitReview AI."
+            echo "::warning::A user must authorize this repository via the GitReview AI extension first."
+            exit 0
+          fi
+
+          if [ "$HTTP_STATUS" -ge 500 ]; then
+            echo "::error::Backend error (HTTP ${HTTP_STATUS}). Analysis could not be completed."
+            echo "::error::Check the backend logs for details."
+            exit 1
+          fi
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Unexpected response (HTTP ${HTTP_STATUS}) from backend."
+            exit 1
+          fi
+
+          # Extract the pre-formatted comment from the response
+          COMMENT_BODY=$(echo "$RESPONSE_BODY" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              print(data.get('comment_markdown', ''))
+          except Exception as e:
+              print(f'Error parsing response: {e}', file=sys.stderr)
+              sys.exit(1)
+          ")
+
+          RISK_TIER=$(echo "$RESPONSE_BODY" | python3 -c "
+          import json, sys
+          try:
+              data = json.load(sys.stdin)
+              print(data.get('risk_tier', 'unknown'))
+          except:
+              print('unknown')
+          ")
+
+          # Write outputs for subsequent steps
+          # Use environment file to avoid issues with multi-line content
+          echo "risk_tier=${RISK_TIER}" >> "$GITHUB_OUTPUT"
+
+          # Write the comment body to a temp file (avoids shell escaping issues)
+          echo "$COMMENT_BODY" > /tmp/gitreview_comment.md
+          echo "comment_written=true" >> "$GITHUB_OUTPUT"
+
+      # ── Step 2: Post or update the PR comment ────────────────────────────────
+      - name: Post or update PR comment
+        if: steps.analysis.outputs.comment_written == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Read the comment body from the temp file
+            let commentBody;
+            try {
+              commentBody = fs.readFileSync('/tmp/gitreview_comment.md', 'utf8');
+            } catch (e) {
+              core.warning('Could not read comment file: ' + e.message);
+              return;
+            }
+
+            if (!commentBody || commentBody.trim() === '') {
+              core.warning('Empty comment body — skipping comment post.');
+              return;
+            }
+
+            const MARKER = '<!-- gitreview-ai-bot -->';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number;
+
+            // Search for an existing GitReview AI comment to edit
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(c => c.body && c.body.includes(MARKER));
+
+            if (existing) {
+              // Edit the existing comment in place (idempotency)
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body: commentBody,
+              });
+              console.log('Updated existing GitReview AI comment #' + existing.id);
+            } else {
+              // Create a new comment
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body: commentBody,
+              });
+              console.log('Created new GitReview AI comment.');
+            }
+
+      # ── Step 3: Apply risk tier label ─────────────────────────────────────────
+      - name: Apply risk tier label
+        if: steps.analysis.outputs.risk_tier != '' && steps.analysis.outputs.risk_tier != 'unknown'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const riskTier = '${{ steps.analysis.outputs.risk_tier }}';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number;
+
+            // Label names must be created in the repository before they can be applied.
+            // The workflow creates them if they don't exist.
+            const labelConfig = {
+              'low':      { name: 'risk: low',      color: '0e8a16', description: 'GitReview AI: Low risk' },
+              'medium':   { name: 'risk: medium',   color: 'fbca04', description: 'GitReview AI: Medium risk' },
+              'high':     { name: 'risk: high',     color: 'e36209', description: 'GitReview AI: High risk' },
+              'critical': { name: 'risk: critical', color: 'd73a4a', description: 'GitReview AI: Critical risk' },
+            };
+
+            const config = labelConfig[riskTier];
+            if (!config) {
+              console.log('Unknown risk tier: ' + riskTier + ' — skipping label.');
+              return;
+            }
+
+            // Ensure the label exists in the repository
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: config.name });
+            } catch (e) {
+              if (e.status === 404) {
+                try {
+                  await github.rest.issues.createLabel({
+                    owner, repo,
+                    name: config.name,
+                    color: config.color,
+                    description: config.description,
+                  });
+                  console.log('Created label: ' + config.name);
+                } catch (createErr) {
+                  core.warning('Could not create label: ' + createErr.message);
+                }
+              }
+            }
+
+            // Remove any existing risk: * labels first (prevents stacking)
+            const { data: currentLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner, repo, issue_number,
+            });
+            const riskLabels = currentLabels.filter(l => l.name.startsWith('risk: '));
+            for (const label of riskLabels) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number, name: label.name,
+                });
+              } catch (e) {
+                core.warning('Could not remove label ' + label.name + ': ' + e.message);
+              }
+            }
+
+            // Apply the new risk label
+            try {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number,
+                labels: [config.name],
+              });
+              console.log('Applied label: ' + config.name);
+            } catch (e) {
+              core.warning('Could not apply label ' + config.name + ': ' + e.message);
+            }
