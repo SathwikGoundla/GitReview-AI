@@ -15,11 +15,11 @@ WEAK_PLACEHOLDERS = {
 
 WEAK_WORDS = {"changeme", "secret", "password"}
 
-def validate_secret(secret_value: str) -> Tuple[bool, str]:
+def validate_secret(secret_value: str, min_length: int = 32) -> Tuple[bool, str]:
     if not secret_value:
         return False, "MISSING"
     
-    if len(secret_value) < 32:
+    if len(secret_value) < min_length:
         return False, "UNSAFE DEFAULT"
     
     if len(set(secret_value)) == 1:
@@ -97,7 +97,7 @@ def run_preflight() -> bool:
         
     report("ALLOWED_ORIGINS", check_production_cors(settings.allowed_origins)[1])
     
-    report("GITHUB_CLIENT_ID", validate_secret(settings.github_client_id)[1])
+    report("GITHUB_CLIENT_ID", validate_secret(settings.github_client_id, min_length=20)[1])
     report("GITHUB_CLIENT_SECRET", validate_secret(settings.github_client_secret)[1])
     
     if not settings.github_redirect_uri:

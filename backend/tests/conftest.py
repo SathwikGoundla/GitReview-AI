@@ -25,3 +25,11 @@ os.environ.setdefault(
 )
 os.environ.setdefault("GITHUB_CLIENT_ID", "fake-client-id")
 os.environ.setdefault("GITHUB_CLIENT_SECRET", "fake-client-secret")
+
+import pytest
+@pytest.fixture(autouse=True)
+def clear_settings_cache():
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+os.environ.setdefault("ACTIONS_SHARED_SECRET", "test-actions-secret-12345")
+os.environ.setdefault("ACTIONS_SHARED_SECRET", "test-actions-secret-12345")

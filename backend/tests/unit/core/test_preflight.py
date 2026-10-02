@@ -44,3 +44,6 @@ def test_cors_placeholder():
     
 def test_cors_missing_extension():
     assert check_production_cors(["https://example.com"])[0] is False
+
+def test_validate_secret_custom_length():
+    assert validate_secret('a' * 19 + 'b', min_length=20)[1] == 'PASS'
