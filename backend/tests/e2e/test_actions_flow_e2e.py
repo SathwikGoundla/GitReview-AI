@@ -22,7 +22,6 @@ os.environ["ENCRYPTION_KEY"] = "V1Z3dEVtN2VZZ212ZjlVemR5VnpXZWNxOHZxd0VxcTM="
 os.environ["GEMINI_API_KEY"] = "test-gemini-key-not-real"
 os.environ["GITHUB_CLIENT_ID"] = "test-client-id"
 os.environ["GITHUB_CLIENT_SECRET"] = "test-client-secret"
-os.environ["ACTIONS_SHARED_SECRET"] = "test-actions-secret-12345"
 
 import json
 import uuid
@@ -52,6 +51,7 @@ from app.main import app
 def compile_jsonb_sqlite(type_, compiler, **kw):
     return "JSON"
 
+
 @compiles(UUID, "sqlite")
 def compile_uuid_sqlite(type_, compiler, **kw):
     return "CHAR(36)"
@@ -65,13 +65,18 @@ for _table in Base.metadata.tables.values():
             _arg = str(getattr(_col.server_default.arg, "text", _col.server_default.arg))
             if "gen_random_uuid" in _arg or "now" in _arg:
                 _col.server_default = None
-        if _col.name in ("created_at", "updated_at", "authorized_at", "completed_at") and _col.default is None:
+        if (
+            _col.name in ("created_at", "updated_at", "authorized_at", "completed_at")
+            and _col.default is None
+        ):
             _col.default = ColumnDefault(lambda: datetime.now(UTC))
+
 
 def _setup_sqlite_functions(dbapi_connection, connection_record):
     dbapi_connection.create_function("gen_random_uuid", 0, lambda: str(uuid.uuid4()))
     dbapi_connection.create_function("now", 0, lambda: datetime.now(UTC).isoformat())
     dbapi_connection.create_function("char_length", 1, lambda s: len(s) if s is not None else 0)
+
 
 TEST_ACTIONS_SECRET = "test-actions-secret-12345"
 VALID_40_CHAR_SHA = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0"
@@ -88,6 +93,7 @@ _ActionsSessionLocal = async_sessionmaker(
     bind=_actions_engine, class_=AsyncSession, expire_on_commit=False
 )
 
+
 async def _override_actions_get_db():
     async with _ActionsSessionLocal() as session:
         try:
@@ -97,6 +103,7 @@ async def _override_actions_get_db():
             await session.rollback()
             raise
 
+
 @pytest.fixture(autouse=True)
 async def _setup_actions_db():
     async with _actions_engine.begin() as conn:
@@ -105,44 +112,54 @@ async def _setup_actions_db():
     async with _actions_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
+
 @pytest.fixture
-def actions_client():
+def actions_client(monkeypatch):
+    from app.actions_integration.service import settings as service_settings
+
+    monkeypatch.setattr(service_settings, "actions_shared_secret", TEST_ACTIONS_SECRET)
     app.dependency_overrides[get_db] = _override_actions_get_db
     client = TestClient(app, raise_server_exceptions=False)
     yield client
     app.dependency_overrides.clear()
 
-MOCK_ACTIONS_AI_RESPONSE = json.dumps({
-    "summary": "GitHub Actions triggered analysis summary.",
-    "risk_tier": "low",
-    "ai_risk_signal": "low",
-    "self_reported_confidence": 92.5,
-    "architectural_impact": "Minimal impact.",
-    "security_risk": "No security risks detected.",
-    "test_coverage_gap": "Good test coverage.",
-    "breaking_change_risk": "No breaking changes.",
-    "risk_factors": ["Minor doc update"],
-    "recommendation": "APPROVE",
-    "key_issues": [],
-    "suggestions": [
-        {
-            "title": "Add documentation link",
-            "description": "Consider referencing docs in PR body.",
-            "severity": "low",
-            "file_path": "README.md",
-            "line_number": 1,
-        }
-    ],
-    "checklist": [
-        {
-            "title": "Verify Action run output",
-            "category": "TESTING",
-            "required": True,
-        }
-    ],
-})
 
-async def setup_authorized_repo(session: AsyncSession, owner: str, name: str) -> tuple[User, Repository]:
+MOCK_ACTIONS_AI_RESPONSE = json.dumps(
+    {
+        "summary": "GitHub Actions triggered analysis summary.",
+        "risk_tier": "low",
+        "ai_risk_signal": "low",
+        "self_reported_confidence": 92.5,
+        "architectural_impact": "Minimal impact.",
+        "security_risk": "No security risks detected.",
+        "test_coverage_gap": "Good test coverage.",
+        "breaking_change_risk": "No breaking changes.",
+        "risk_factors": ["Minor doc update"],
+        "recommendation": "APPROVE",
+        "key_issues": [],
+        "suggestions": [
+            {
+                "title": "Add documentation link",
+                "description": "Consider referencing docs in PR body.",
+                "severity": "low",
+                "file_path": "README.md",
+                "line_number": 1,
+            }
+        ],
+        "checklist": [
+            {
+                "title": "Verify Action run output",
+                "category": "TESTING",
+                "required": True,
+            }
+        ],
+    }
+)
+
+
+async def setup_authorized_repo(
+    session: AsyncSession, owner: str, name: str
+) -> tuple[User, Repository]:
     user = User(
         id=uuid.uuid4(),
         github_user_id=987654,
@@ -172,6 +189,7 @@ async def setup_authorized_repo(session: AsyncSession, owner: str, name: str) ->
     await session.commit()
     return user, repo
 
+
 @pytest.mark.asyncio
 async def test_actions_analyze_valid_request_success(actions_client):
     """Flow 7.1: Valid Actions request produces persisted analysis and ActionsAnalysisResponse."""
@@ -196,9 +214,16 @@ async def test_actions_analyze_valid_request_success(actions_client):
         commit_messages=["feat: Add Actions integration"],
     )
 
-    with patch("app.github_integration.client.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), \
-         patch("app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_ACTIONS_AI_RESPONSE)):
-
+    with (
+        patch(
+            "app.github_integration.client.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_ACTIONS_AI_RESPONSE),
+        ),
+    ):
         payload = {
             "owner": "acme-corp",
             "name": "service-backend",
@@ -230,12 +255,11 @@ async def test_actions_analyze_valid_request_success(actions_client):
             assert db_pr is not None
 
             db_analysis_res = await db_session.execute(
-                select(PullRequestAnalysis).where(
-                    PullRequestAnalysis.pull_request_id == db_pr.id
-                )
+                select(PullRequestAnalysis).where(PullRequestAnalysis.pull_request_id == db_pr.id)
             )
             db_analysis = db_analysis_res.scalar_one_or_none()
             assert db_analysis is not None
+
 
 @pytest.mark.asyncio
 async def test_actions_analyze_invalid_secret_rejected(actions_client):
@@ -254,6 +278,7 @@ async def test_actions_analyze_invalid_secret_rejected(actions_client):
     assert response.status_code == 401
     assert "Invalid shared secret" in response.json()["detail"]
 
+
 @pytest.mark.asyncio
 async def test_actions_analyze_missing_secret_rejected(actions_client):
     """Flow 7.2b: Missing shared secret header is rejected with 401 Unauthorized."""
@@ -268,6 +293,7 @@ async def test_actions_analyze_missing_secret_rejected(actions_client):
     }
     response = actions_client.post("/api/actions/analyze", json=payload, headers=headers)
     assert response.status_code == 401
+
 
 @pytest.mark.asyncio
 async def test_actions_analyze_missing_github_token_rejected(actions_client):
@@ -285,6 +311,7 @@ async def test_actions_analyze_missing_github_token_rejected(actions_client):
     assert response.status_code == 400
     assert "X-GitHub-Token header is required" in response.json()["detail"]
 
+
 @pytest.mark.asyncio
 async def test_actions_analyze_unauthorized_repository_returns_404(actions_client):
     """Flow 7.4: Repository not authorized by any user returns 404 Not Found."""
@@ -301,13 +328,17 @@ async def test_actions_analyze_unauthorized_repository_returns_404(actions_clien
     response = actions_client.post("/api/actions/analyze", json=payload, headers=headers)
     assert response.status_code == 404
 
+
 @pytest.mark.asyncio
 async def test_actions_analyze_github_fetch_failure_handled(actions_client):
     """Flow 7.5: GitHub API error fetching PR details is handled gracefully."""
     async with _ActionsSessionLocal() as session:
         await setup_authorized_repo(session, "acme-corp", "failing-repo")
 
-    with patch("app.github_integration.client.GitHubApiClient.fetch_pull_request_data", AsyncMock(side_effect=Exception("GitHub API Error"))):
+    with patch(
+        "app.github_integration.client.GitHubApiClient.fetch_pull_request_data",
+        AsyncMock(side_effect=Exception("GitHub API Error")),
+    ):
         payload = {
             "owner": "acme-corp",
             "name": "failing-repo",
@@ -320,6 +351,8 @@ async def test_actions_analyze_github_fetch_failure_handled(actions_client):
         }
         response = actions_client.post("/api/actions/analyze", json=payload, headers=headers)
         assert response.status_code in (404, 500, 502)
+
+
 from unittest.mock import AsyncMock, patch
 
 from app.main import app
@@ -327,10 +360,17 @@ from app.github_integration.client import PRData
 
 client = TestClient(app)
 
+
 @pytest.mark.asyncio
 async def test_actions_analyze_oversized_pr(actions_client, monkeypatch):
     from app.core.config import Settings
-    settings = Settings(max_pr_lines=3000, max_pr_bytes=1024, actions_shared_secret=TEST_ACTIONS_SECRET, database_url='sqlite+aiosqlite:///:memory:')
+
+    settings = Settings(
+        max_pr_lines=3000,
+        max_pr_bytes=1024,
+        actions_shared_secret=TEST_ACTIONS_SECRET,
+        database_url="sqlite+aiosqlite:///:memory:",
+    )
     monkeypatch.setattr("app.core.config.get_settings", lambda: settings)
 
     # Setup the authorized repo
@@ -353,10 +393,13 @@ async def test_actions_analyze_oversized_pr(actions_client, monkeypatch):
         diff_text="a" * 1024,
         lines_added=4000,
         lines_removed=2000,
-        commit_messages=["Huge commit"]
+        commit_messages=["Huge commit"],
     )
-    
-    with patch("app.github_integration.client.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=oversized_pr_data)):
+
+    with patch(
+        "app.github_integration.client.GitHubApiClient.fetch_pull_request_data",
+        AsyncMock(return_value=oversized_pr_data),
+    ):
         payload = {
             "owner": "actions-owner",
             "name": "actions-repo",
@@ -367,9 +410,9 @@ async def test_actions_analyze_oversized_pr(actions_client, monkeypatch):
             "X-Actions-Secret": TEST_ACTIONS_SECRET,
             "X-GitHub-Token": "ghp_actions_token",
         }
-        
+
         response = actions_client.post("/api/actions/analyze", json=payload, headers=headers)
-        
+
         assert response.status_code == 413
         data = response.json()
         assert data["error"] == "PR_TOO_LARGE"

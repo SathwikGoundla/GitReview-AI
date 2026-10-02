@@ -21,7 +21,6 @@ os.environ["ENCRYPTION_KEY"] = "V1Z3dEVtN2VZZ212ZjlVemR5VnpXZWNxOHZxd0VxcTM="
 os.environ["GEMINI_API_KEY"] = "fake-key-for-tests"
 os.environ["GITHUB_CLIENT_ID"] = "fake-client-id"
 os.environ["GITHUB_CLIENT_SECRET"] = "fake-client-secret"
-os.environ["ACTIONS_SHARED_SECRET"] = "test-actions-shared-secret-12345"
 
 import json
 import uuid
@@ -57,6 +56,7 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
 def _compile_uuid_sqlite(type_, compiler, **kw):
     return "CHAR(36)"
 
+
 @pytest.fixture(autouse=True)
 def _setup_monkeypatches(monkeypatch):
     _orig_create_async_engine = sqlalchemy.ext.asyncio.create_async_engine
@@ -78,8 +78,7 @@ def _setup_monkeypatches(monkeypatch):
 
         result = await db.execute(
             select(RepositoryAccess).where(
-                RepositoryAccess.user_id == user_id,
-                RepositoryAccess.repository_id == repository_id
+                RepositoryAccess.user_id == user_id, RepositoryAccess.repository_id == repository_id
             )
         )
         access = result.scalar_one_or_none()
@@ -89,7 +88,7 @@ def _setup_monkeypatches(monkeypatch):
                 repository_id=repository_id,
                 github_permission_level=permission,
                 authorized_at=datetime.now(UTC),
-                revoked_at=None
+                revoked_at=None,
             )
             db.add(access)
         else:
@@ -111,6 +110,7 @@ def _setup_monkeypatches(monkeypatch):
             repo_name = parts[-1] if len(parts) > 0 and parts[-1] else "api"
             owner = parts[-2] if len(parts) > 1 and parts[-2] else "acme"
             from unittest.mock import MagicMock
+
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = {
@@ -123,6 +123,7 @@ def _setup_monkeypatches(monkeypatch):
         return await _orig_httpx_get(self, url, *args, **kwargs)
 
     monkeypatch.setattr(httpx.AsyncClient, "get", _smart_httpx_get)
+
 
 # Shared test database engine using in-memory SQLite with StaticPool
 # Shared test database engine using in-memory SQLite with StaticPool
@@ -157,7 +158,10 @@ for _table in Base.metadata.tables.values():
             _arg = str(getattr(_col.server_default.arg, "text", _col.server_default.arg))
             if "gen_random_uuid" in _arg or "now" in _arg:
                 _col.server_default = None
-        if _col.name in ("created_at", "updated_at", "authorized_at", "completed_at") and _col.default is None:
+        if (
+            _col.name in ("created_at", "updated_at", "authorized_at", "completed_at")
+            and _col.default is None
+        ):
             _col.default = ColumnDefault(lambda: datetime.now(UTC))
 
 _TestAsyncSessionLocal = async_sessionmaker(
@@ -186,106 +190,113 @@ async def _setup_e2e_db():
 
 
 @pytest.fixture
-def e2e_client():
+def e2e_client(monkeypatch):
     """FastAPI TestClient with get_db overridden to use the in-memory test database."""
+    from app.actions_integration.service import settings as service_settings
+
+    monkeypatch.setattr(
+        service_settings, "actions_shared_secret", "test-actions-shared-secret-12345"
+    )
     app.dependency_overrides[get_db] = _override_get_db
     client = TestClient(app, raise_server_exceptions=True)
     yield client
     app.dependency_overrides.clear()
 
 
-MOCK_VALID_AI_RESPONSE = json.dumps({
-    "summary": "Comprehensive analysis of PR #42 modifying backend authentication endpoints.",
-    "risk_tier": "medium",
-    "ai_risk_signal": "medium",
-    "self_reported_confidence": 85,
-    "risk_rationale": {
-        "summary": "Moderate risk PR modifying backend auth endpoints.",
-        "factors": [
+MOCK_VALID_AI_RESPONSE = json.dumps(
+    {
+        "summary": "Comprehensive analysis of PR #42 modifying backend authentication endpoints.",
+        "risk_tier": "medium",
+        "ai_risk_signal": "medium",
+        "self_reported_confidence": 85,
+        "risk_rationale": {
+            "summary": "Moderate risk PR modifying backend auth endpoints.",
+            "factors": [
+                {
+                    "factor": "API Changes",
+                    "source": "ai",
+                    "detail": "Modifies endpoints",
+                    "category": "api_changes",
+                    "impact": "medium",
+                }
+            ],
+        },
+        "reviewer_signals": {
+            "summary": "Recommended reviewer assigned.",
+            "suggested_reviewers": [
+                {
+                    "username": "senior_dev",
+                    "confidence": 90,
+                    "rationale": "Expert in auth",
+                }
+            ],
+        },
+        "review_suggestions": [
             {
-                "factor": "API Changes",
-                "source": "ai",
-                "detail": "Modifies endpoints",
-                "category": "api_changes",
-                "impact": "medium",
+                "focus_area": "auth_flow",
+                "rationale": "Verify token expiration",
+                "suggested_file": "src/app.py",
             }
         ],
-    },
-    "reviewer_signals": {
-        "summary": "Recommended reviewer assigned.",
-        "suggested_reviewers": [
+        "checklist": [
             {
-                "username": "senior_dev",
-                "confidence": 90,
-                "rationale": "Expert in auth",
-            }
+                "category": "security",
+                "item": "Verify token revocation",
+                "relevant": True,
+                "self_reported_confidence": 90,
+                "suggested_file": "src/app.py",
+            },
+            {
+                "category": "performance",
+                "item": "Check DB query execution time",
+                "relevant": True,
+                "self_reported_confidence": 85,
+            },
+            {
+                "category": "exception_handling",
+                "item": "Ensure exceptions yield 401",
+                "relevant": True,
+                "self_reported_confidence": 88,
+            },
+            {
+                "category": "null_handling",
+                "item": "Check nullable token header",
+                "relevant": True,
+                "self_reported_confidence": 90,
+            },
+            {
+                "category": "logging",
+                "item": "Verify audit logs do not leak secrets",
+                "relevant": True,
+                "self_reported_confidence": 95,
+            },
+            {
+                "category": "testing",
+                "item": "Add E2E tests for auth flow",
+                "relevant": True,
+                "self_reported_confidence": 90,
+            },
+            {
+                "category": "documentation",
+                "item": "Update OpenAPI specs",
+                "relevant": True,
+                "self_reported_confidence": 80,
+            },
+            {
+                "category": "dependencies",
+                "item": "Check dependency versions",
+                "relevant": True,
+                "self_reported_confidence": 85,
+            },
+            {
+                "category": "database_changes",
+                "item": "Check migration status",
+                "relevant": True,
+                "self_reported_confidence": 85,
+            },
         ],
-    },
-    "review_suggestions": [
-        {
-            "focus_area": "auth_flow",
-            "rationale": "Verify token expiration",
-            "suggested_file": "src/app.py",
-        }
-    ],
-    "checklist": [
-        {
-            "category": "security",
-            "item": "Verify token revocation",
-            "relevant": True,
-            "self_reported_confidence": 90,
-            "suggested_file": "src/app.py",
-        },
-        {
-            "category": "performance",
-            "item": "Check DB query execution time",
-            "relevant": True,
-            "self_reported_confidence": 85,
-        },
-        {
-            "category": "exception_handling",
-            "item": "Ensure exceptions yield 401",
-            "relevant": True,
-            "self_reported_confidence": 88,
-        },
-        {
-            "category": "null_handling",
-            "item": "Check nullable token header",
-            "relevant": True,
-            "self_reported_confidence": 90,
-        },
-        {
-            "category": "logging",
-            "item": "Verify audit logs do not leak secrets",
-            "relevant": True,
-            "self_reported_confidence": 95,
-        },
-        {
-            "category": "testing",
-            "item": "Add E2E tests for auth flow",
-            "relevant": True,
-            "self_reported_confidence": 90,
-        },
-        {
-            "category": "documentation",
-            "item": "Update OpenAPI specs",
-            "relevant": True,
-            "self_reported_confidence": 80,
-        },
-        {
-            "category": "dependencies",
-            "item": "Check dependency versions",
-            "relevant": True,
-            "self_reported_confidence": 85,
-        },
-        {
-            "category": "database_changes",
-            "item": "Check migration status",
-            "relevant": True,
-            "self_reported_confidence": 85,
-        },
-    ],
-})
+    }
+)
 
 
 def _create_authenticated_user_session(
@@ -295,9 +306,18 @@ def _create_authenticated_user_session(
     res_login = client.get("/api/auth/login")
     state = res_login.json()["state"]
 
-    with patch("app.auth.service.exchange_code_for_token", AsyncMock(return_value="tok_mock_123")), patch(
-        "app.auth.service.fetch_github_user",
-        AsyncMock(return_value={"id": github_id, "login": username, "avatar_url": "https://avatar.com/u"}),
+    with (
+        patch("app.auth.service.exchange_code_for_token", AsyncMock(return_value="tok_mock_123")),
+        patch(
+            "app.auth.service.fetch_github_user",
+            AsyncMock(
+                return_value={
+                    "id": github_id,
+                    "login": username,
+                    "avatar_url": "https://avatar.com/u",
+                }
+            ),
+        ),
     ):
         res_cb = client.get(
             f"/api/auth/callback?code=mock_code&state={state}",
@@ -330,9 +350,18 @@ def test_e2e_oauth_callback_creates_user_and_session(e2e_client: TestClient) -> 
     res_login = e2e_client.get("/api/auth/login")
     state = res_login.json()["state"]
 
-    with patch("app.auth.service.exchange_code_for_token", AsyncMock(return_value="tok_123")), patch(
-        "app.auth.service.fetch_github_user",
-        AsyncMock(return_value={"id": 88811, "login": "alice", "avatar_url": "https://avatar.com/alice"}),
+    with (
+        patch("app.auth.service.exchange_code_for_token", AsyncMock(return_value="tok_123")),
+        patch(
+            "app.auth.service.fetch_github_user",
+            AsyncMock(
+                return_value={
+                    "id": 88811,
+                    "login": "alice",
+                    "avatar_url": "https://avatar.com/alice",
+                }
+            ),
+        ),
     ):
         response = e2e_client.get(
             f"/api/auth/callback?code=mock_code&state={state}",
@@ -400,7 +429,10 @@ def test_e2e_authorize_repository_persists_access(e2e_client: TestClient) -> Non
     session_token, _user_id = _create_authenticated_user_session(e2e_client, "dev1", 77701)
     headers = {"x-session-token": session_token}
 
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         response = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "backend-api"},
@@ -427,7 +459,10 @@ def test_e2e_analyze_pull_request_orchestration_and_persistence(
     headers = {"x-session-token": session_token}
 
     # Authorize repository
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "core-service"},
@@ -454,8 +489,15 @@ def test_e2e_analyze_pull_request_orchestration_and_persistence(
         commit_messages=["feat: add feature x"],
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         response = e2e_client.post(
             f"/api/repositories/{repo_id}/pulls/101/analyze",
@@ -482,7 +524,10 @@ def test_e2e_submit_valid_risk_feedback(e2e_client: TestClient) -> None:
     headers = {"x-session-token": session_token}
 
     # Setup repo and analysis
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "service-a"},
@@ -507,8 +552,15 @@ def test_e2e_submit_valid_risk_feedback(e2e_client: TestClient) -> None:
         lines_removed=1,
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         analyze_resp = e2e_client.post(
             f"/api/repositories/{repo_id}/pulls/5/analyze", headers=headers
@@ -540,7 +592,10 @@ def test_e2e_submit_invalid_feedback_rejected(e2e_client: TestClient) -> None:
     headers = {"x-session-token": session_token}
 
     # Setup repo and analysis
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "service-b"},
@@ -565,8 +620,15 @@ def test_e2e_submit_invalid_feedback_rejected(e2e_client: TestClient) -> None:
         lines_removed=0,
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         analyze_resp = e2e_client.post(
             f"/api/repositories/{repo_id}/pulls/8/analyze", headers=headers
@@ -593,7 +655,10 @@ def test_e2e_submit_reviewer_recommendation_feedback(e2e_client: TestClient) -> 
     session_token, _user_id = _create_authenticated_user_session(e2e_client, "dev5", 77705)
     headers = {"x-session-token": session_token}
 
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "service-c"},
@@ -618,8 +683,15 @@ def test_e2e_submit_reviewer_recommendation_feedback(e2e_client: TestClient) -> 
         lines_removed=2,
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         analyze_resp = e2e_client.post(
             f"/api/repositories/{repo_id}/pulls/12/analyze", headers=headers
@@ -651,7 +723,10 @@ def test_e2e_checklist_item_completion_toggle(e2e_client: TestClient) -> None:
     session_token, _user_id = _create_authenticated_user_session(e2e_client, "dev6", 77706)
     headers = {"x-session-token": session_token}
 
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "service-d"},
@@ -676,8 +751,15 @@ def test_e2e_checklist_item_completion_toggle(e2e_client: TestClient) -> None:
         lines_removed=0,
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         analyze_resp = e2e_client.post(
             f"/api/repositories/{repo_id}/pulls/20/analyze", headers=headers
@@ -697,7 +779,10 @@ def test_e2e_checklist_item_completion_toggle(e2e_client: TestClient) -> None:
     assert patch1.json()["completed"] is True
 
     # Re-analyze PR (cached analysis returns hydrated completed state)
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)):
+    with patch(
+        "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+        AsyncMock(return_value=mock_pr),
+    ):
         reanalyze_resp = e2e_client.post(
             f"/api/repositories/{repo_id}/pulls/20/analyze", headers=headers
         )
@@ -726,7 +811,10 @@ def test_e2e_analytics_lifecycle_and_repo_revocation(e2e_client: TestClient) -> 
     headers = {"x-session-token": session_token}
 
     # Authorize repo and analyze PR
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "analytics-repo"},
@@ -751,8 +839,15 @@ def test_e2e_analytics_lifecycle_and_repo_revocation(e2e_client: TestClient) -> 
         lines_removed=1,
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         e2e_client.post(f"/api/repositories/{repo_id}/pulls/1/analyze", headers=headers)
 
@@ -771,9 +866,7 @@ def test_e2e_analytics_lifecycle_and_repo_revocation(e2e_client: TestClient) -> 
     assert revoke_resp.status_code == 200
 
     # Repo Analytics returns 404 after revocation
-    repo_analytics_after = e2e_client.get(
-        f"/api/analytics/repositories/{repo_id}", headers=headers
-    )
+    repo_analytics_after = e2e_client.get(f"/api/analytics/repositories/{repo_id}", headers=headers)
     assert repo_analytics_after.status_code == 404
 
 
@@ -791,7 +884,10 @@ def test_e2e_cross_user_isolation(e2e_client: TestClient) -> None:
     headers_b = {"x-session-token": user_b_token}
 
     # User A authorizes repository and creates analysis
-    with patch("app.repositories.service.GitHubApiClient.verify_repo_access", AsyncMock(return_value=(True, "admin"))):
+    with patch(
+        "app.repositories.service.GitHubApiClient.verify_repo_access",
+        AsyncMock(return_value=(True, "admin")),
+    ):
         auth_resp_a = e2e_client.post(
             "/api/repositories/authorize",
             json={"owner": "acme", "name": "private-repo"},
@@ -816,8 +912,15 @@ def test_e2e_cross_user_isolation(e2e_client: TestClient) -> None:
         lines_removed=0,
     )
 
-    with patch("app.pull_requests.service.GitHubApiClient.fetch_pull_request_data", AsyncMock(return_value=mock_pr)), patch(
-        "app.ai_provider.gemini_adapter.GeminiAdapter.generate", AsyncMock(return_value=MOCK_VALID_AI_RESPONSE)
+    with (
+        patch(
+            "app.pull_requests.service.GitHubApiClient.fetch_pull_request_data",
+            AsyncMock(return_value=mock_pr),
+        ),
+        patch(
+            "app.ai_provider.gemini_adapter.GeminiAdapter.generate",
+            AsyncMock(return_value=MOCK_VALID_AI_RESPONSE),
+        ),
     ):
         analyze_resp_a = e2e_client.post(
             f"/api/repositories/{repo_a_id}/pulls/50/analyze", headers=headers_a
@@ -832,9 +935,7 @@ def test_e2e_cross_user_isolation(e2e_client: TestClient) -> None:
     assert list_b.json()["total"] == 0
 
     # 2. User B attempts to view User A's repo analytics -> 404 (IDOR / anti-enumeration)
-    repo_analytics_b = e2e_client.get(
-        f"/api/analytics/repositories/{repo_a_id}", headers=headers_b
-    )
+    repo_analytics_b = e2e_client.get(f"/api/analytics/repositories/{repo_a_id}", headers=headers_b)
     assert repo_analytics_b.status_code == 404
 
     # 3. User B attempts to revoke User A's repository access -> 404

@@ -154,17 +154,17 @@ class AnalysisOrchestrator:
         pr_data = await github_client.fetch_pull_request_data(
             repo.owner, repo.name, pull_request.github_pr_number
         )
-        
+
         # Enforce PR size limits
         total_lines = pr_data.lines_added + pr_data.lines_removed
         total_bytes = len(pr_data.diff_text.encode("utf-8")) if pr_data.diff_text else 0
-        
+
         settings = get_settings()
         if total_lines > settings.max_pr_lines:
             raise PRTooLargeError(
                 f"Pull request exceeds line limit: {total_lines} > {settings.max_pr_lines}."
             )
-            
+
         if total_bytes > settings.max_pr_bytes:
             raise PRTooLargeError(
                 f"Pull request exceeds byte limit: {total_bytes} > {settings.max_pr_bytes}."
