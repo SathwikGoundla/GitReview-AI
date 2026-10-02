@@ -43,6 +43,8 @@ from app.analysis.prompt.builder import NormalizedPRData, PromptBuilder
 from app.analysis.reviewer.service import ReviewerRankingService, ReviewerRecommendationResult
 from app.analysis.risk.engine import RiskEngine, RiskResult
 from app.analysis.validation.validator import AnalysisResponseValidator
+from app.core.exceptions import PRTooLargeError
+from app.core.config import get_settings
 from app.core.logging import log_event
 from app.core.models import (
     ChecklistItem,
@@ -152,6 +154,22 @@ class AnalysisOrchestrator:
         pr_data = await github_client.fetch_pull_request_data(
             repo.owner, repo.name, pull_request.github_pr_number
         )
+        
+        # Enforce PR size limits
+        total_lines = pr_data.lines_added + pr_data.lines_removed
+        total_bytes = len(pr_data.diff_text.encode("utf-8")) if pr_data.diff_text else 0
+        
+        settings = get_settings()
+        if total_lines > settings.max_pr_lines:
+            raise PRTooLargeError(
+                f"Pull request exceeds line limit: {total_lines} > {settings.max_pr_lines}."
+            )
+            
+        if total_bytes > settings.max_pr_bytes:
+            raise PRTooLargeError(
+                f"Pull request exceeds byte limit: {total_bytes} > {settings.max_pr_bytes}."
+            )
+
         codeowners_map = await github_client.fetch_codeowners(repo.owner, repo.name)
         commit_history, review_history = await github_client.fetch_contribution_history(
             repo.owner, repo.name, pr_data.changed_files
@@ -233,6 +251,9 @@ class AnalysisOrchestrator:
             status="completed" if ai_available else "degraded",
         )
 
+        # primary_reviewer from analysis to get ID
+        primary_reviewer = next((r for r in analysis.reviewer_recommendations if r.rank == 1), None)
+
         return AnalysisResult(
             analysis_id=analysis.id,
             pull_request_id=pull_request.id,
@@ -243,24 +264,24 @@ class AnalysisOrchestrator:
             risk_source=risk_result.source,
             risk_rationale=risk_result.rationale,
             risk_confidence=risk_confidence,
-            risk_assessment_id=(
-                analysis.risk_assessment.id if analysis.risk_assessment else None
-            ),
+            risk_assessment_id=(analysis.risk_assessment.id if analysis.risk_assessment else None),
             review_suggestions=[
                 {"focus_area": s.focus_area, "category": s.category}
                 for s in analysis.review_suggestions
             ],
             reviewer_recommendation=(
                 {
-                    "username": reviewer_result.recommended_username,
-                    "reason": reviewer_result.reason,
-                    "confidence_score": reviewer_result.confidence_score,
+                    "id": str(primary_reviewer.id),
+                    "username": primary_reviewer.recommended_github_username,
+                    "reason": primary_reviewer.reason,
+                    "confidence_score": float(primary_reviewer.confidence_score),
                 }
-                if reviewer_result.has_suggestion
+                if primary_reviewer
                 else None
             ),
             checklist_items=[
                 {
+                    "id": str(item.id),
                     "category": item.category,
                     "confidence_score": float(item.confidence_score),
                     "trigger_source": item.trigger_source,
@@ -317,6 +338,7 @@ class AnalysisOrchestrator:
             ],
             reviewer_recommendation=(
                 {
+                    "id": str(primary_reviewer.id),
                     "username": primary_reviewer.recommended_github_username,
                     "reason": primary_reviewer.reason,
                     "confidence_score": float(primary_reviewer.confidence_score),
@@ -326,6 +348,7 @@ class AnalysisOrchestrator:
             ),
             checklist_items=[
                 {
+                    "id": str(item.id),
                     "category": item.category,
                     "confidence_score": float(item.confidence_score),
                     "trigger_source": item.trigger_source,

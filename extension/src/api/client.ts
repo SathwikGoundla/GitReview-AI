@@ -48,6 +48,7 @@ import type {
   RevokeAccessResponse,
   SubmitFeedbackRequest,
   UserAnalyticsResponse,
+  ChecklistCompletionResponse,
 } from "../types";
 
 // ── Base URL ──────────────────────────────────────────────────────────────────
@@ -57,12 +58,21 @@ import type {
  * In development: http://localhost:8000
  * In production: set VITE_BACKEND_URL in your .env file.
  */
-const BASE_URL: string =
-  (typeof import.meta !== "undefined" &&
-    (import.meta as Record<string, unknown>).env &&
-    ((import.meta as Record<string, { VITE_BACKEND_URL?: string }>).env
-      .VITE_BACKEND_URL as string)) ||
-  "http://localhost:8000";
+const envUrl =
+  typeof import.meta !== "undefined" && (import.meta as any).env
+    ? (import.meta as any).env.VITE_BACKEND_URL
+    : undefined;
+
+const isProd =
+  typeof import.meta !== "undefined" && (import.meta as any).env
+    ? (import.meta as any).env.MODE === "production"
+    : false;
+
+if (isProd && !envUrl) {
+  throw new Error("Missing VITE_BACKEND_URL in production build.");
+}
+
+const BASE_URL: string = envUrl || "http://localhost:8000";
 
 // ── Error classes ─────────────────────────────────────────────────────────────
 
@@ -355,6 +365,23 @@ export async function apiSubmitFeedback(
   return request<FeedbackResponse>(
     `/api/analyses/${analysisId}/feedback`,
     { method: "POST", body: feedbackData }
+  );
+}
+
+// ── Checklist Completion ──────────────────────────────────────────────────────
+
+/**
+ * PATCH /api/analyses/{analysis_id}/checklist/{item_id}
+ * Update completion state of a checklist item.
+ */
+export async function apiUpdateChecklistCompletion(
+  analysisId: string,
+  itemId: string,
+  completed: boolean
+): Promise<ChecklistCompletionResponse> {
+  return request<ChecklistCompletionResponse>(
+    `/api/analyses/${analysisId}/checklist/${itemId}`,
+    { method: "PATCH", body: { completed } }
   );
 }
 

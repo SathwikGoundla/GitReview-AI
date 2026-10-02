@@ -41,12 +41,14 @@ describe("Type contract — AnalysisResponse fields match backend schema", () =>
         { focus_area: "Check null handling in middleware", category: "null_handling" },
       ],
       reviewer_recommendation: {
+        id: "reviewer-rec-1",
         username: "gowtham",
         reason: "Previously reviewed authentication module",
         confidence_score: 72.0,
       },
       checklist_items: [
         {
+          id: "checklist-item-1",
           category: "security",
           confidence_score: 95.0,
           trigger_source: "both",
@@ -117,6 +119,7 @@ describe("Type contract — PRSummaryResponse", () => {
 describe("Type contract — ReviewerRecommendationSchema", () => {
   it("has all required fields", () => {
     const rec: ReviewerRecommendationSchema = {
+      id: "mock-id-bhargav",
       username: "bhargav",
       reason: "Primary committer on authentication/ path",
       confidence_score: 68.0,
@@ -131,6 +134,7 @@ describe("Type contract — ReviewerRecommendationSchema", () => {
 describe("Type contract — ChecklistItemSchema", () => {
   it("has all required fields and valid trigger_source values", () => {
     const item: ChecklistItemSchema = {
+      id: "item-42",
       category: "security",
       confidence_score: 91.0,
       trigger_source: "deterministic",

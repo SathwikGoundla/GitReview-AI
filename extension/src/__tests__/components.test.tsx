@@ -3,9 +3,8 @@
  * Uses @testing-library/react for DOM queries.
  */
 
-import React from "react";
-import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
 import { RiskBadge } from "../components/RiskBadge";
 import { ConfidenceBar } from "../components/ConfidenceBar";
 import { ReviewerCard } from "../components/ReviewerCard";
@@ -97,6 +96,7 @@ describe("ReviewerCard", () => {
 
   it("shows reviewer username when recommendation is present", () => {
     const rec: ReviewerRecommendationSchema = {
+      id: "mock-id-1",
       username: "gowtham",
       reason: "Primary reviewer of authentication module",
       confidence_score: 72.0,
@@ -107,6 +107,7 @@ describe("ReviewerCard", () => {
 
   it("shows the reason when recommendation is present", () => {
     const rec: ReviewerRecommendationSchema = {
+      id: "mock-id-2",
       username: "bhargav",
       reason: "Primary reviewer of authentication module",
       confidence_score: 68.0,
@@ -119,6 +120,7 @@ describe("ReviewerCard", () => {
 
   it("renders a GitHub profile link", () => {
     const rec: ReviewerRecommendationSchema = {
+      id: "mock-id-3",
       username: "sumedh",
       reason: "CODEOWNERS match",
       confidence_score: 90.0,
@@ -135,32 +137,32 @@ describe("ReviewerCard", () => {
 
 describe("Checklist", () => {
   const items: ChecklistItemSchema[] = [
-    { category: "security", confidence_score: 95.0, trigger_source: "deterministic" },
-    { category: "testing", confidence_score: 82.0, trigger_source: "ai" },
-    { category: "null_handling", confidence_score: 60.0, trigger_source: "both" },
+    { id: "item-1", category: "security", confidence_score: 95.0, trigger_source: "deterministic" },
+    { id: "item-2", category: "testing", confidence_score: 82.0, trigger_source: "ai" },
+    { id: "item-3", category: "null_handling", confidence_score: 60.0, trigger_source: "both" },
   ];
 
   it("renders human-readable category labels", () => {
-    render(<Checklist items={items} isFallback={false} />);
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
     expect(screen.getByText("Security Validation")).toBeTruthy();
     expect(screen.getByText("Test Coverage")).toBeTruthy();
     expect(screen.getByText("Null Handling")).toBeTruthy();
   });
 
   it("shows 0/N checked by default", () => {
-    render(<Checklist items={items} isFallback={false} />);
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
     expect(screen.getByText("0/3 checked")).toBeTruthy();
   });
 
   it("increments checked count when an item is checked", () => {
-    render(<Checklist items={items} isFallback={false} />);
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]);
     expect(screen.getByText("1/3 checked")).toBeTruthy();
   });
 
   it("decrements when unchecked again", () => {
-    render(<Checklist items={items} isFallback={false} />);
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]);
     fireEvent.click(checkboxes[0]);
@@ -168,30 +170,30 @@ describe("Checklist", () => {
   });
 
   it("shows fallback badge when isFallback is true", () => {
-    render(<Checklist items={items} isFallback={true} />);
+    render(<Checklist items={items} isFallback={true} analysisId="test-id" />);
     expect(screen.getByText(/baseline/i)).toBeTruthy();
   });
 
   it("does not show fallback badge when isFallback is false", () => {
-    render(<Checklist items={items} isFallback={false} />);
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
     expect(screen.queryByText(/baseline/i)).toBeNull();
   });
 
   it("shows empty message when no items", () => {
-    render(<Checklist items={[]} isFallback={false} />);
+    render(<Checklist items={[]} isFallback={false} analysisId="test-id" />);
     expect(screen.getByText(/no checklist items/i)).toBeTruthy();
   });
 
   it("shows source labels", () => {
-    render(<Checklist items={items} isFallback={false} />);
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
     expect(screen.getByText("rule")).toBeTruthy();
     expect(screen.getByText("AI")).toBeTruthy();
     expect(screen.getByText("rule+AI")).toBeTruthy();
   });
 
   it("renders a local-state caveat note", () => {
-    render(<Checklist items={items} isFallback={false} />);
-    expect(screen.getByText(/local to this session/i)).toBeTruthy();
+    render(<Checklist items={items} isFallback={false} analysisId="test-id" />);
+    expect(screen.queryByText(/local to this session/i)).toBeNull(); // Removed in phase 5
   });
 });
 

@@ -219,22 +219,20 @@ class TestFormatPrComment:
         assert "Security" in comment or "security" in comment.lower()
 
     def test_failed_analysis_shows_warning(self):
-        comment = format_pr_comment(
-            _make_result_dict(status="failed"), "o", "r", 1
-        )
+        comment = format_pr_comment(_make_result_dict(status="failed"), "o", "r", 1)
         assert "failed" in comment.lower() or "Analysis failed" in comment
 
     def test_degraded_shows_deterministic_note(self):
         comment = format_pr_comment(
             _make_result_dict(status="degraded", risk_source="deterministic_only"),
-            "o", "r", 1,
+            "o",
+            "r",
+            1,
         )
         assert "deterministic" in comment.lower() or "unavailable" in comment.lower()
 
     def test_no_reviewer_when_abstained(self):
-        comment = format_pr_comment(
-            _make_result_dict(reviewer_recommendation=None), "o", "r", 1
-        )
+        comment = format_pr_comment(_make_result_dict(reviewer_recommendation=None), "o", "r", 1)
         assert "Suggested Reviewer" not in comment
 
     def test_review_assistance_disclaimer(self):
@@ -262,9 +260,7 @@ class TestFormatPrComment:
         assert short in comment
 
     def test_checklist_fallback_note_shown(self):
-        comment = format_pr_comment(
-            _make_result_dict(checklist_is_fallback=True), "o", "r", 1
-        )
+        comment = format_pr_comment(_make_result_dict(checklist_is_fallback=True), "o", "r", 1)
         assert "baseline" in comment.lower() or "fallback" in comment.lower()
 
     def test_rationale_factors_shown(self):
@@ -281,7 +277,12 @@ class TestFormatPrComment:
         assert len(factor_matches) <= 5
 
     def test_risk_emojis_present(self):
-        for tier, expected_emoji in [("low", "🟢"), ("medium", "🟡"), ("high", "🟠"), ("critical", "🔴")]:
+        for tier, expected_emoji in [
+            ("low", "🟢"),
+            ("medium", "🟡"),
+            ("high", "🟠"),
+            ("critical", "🔴"),
+        ]:
             comment = format_pr_comment(_make_result_dict(risk_tier=tier), "o", "r", 1)
             assert expected_emoji in comment
 
@@ -357,7 +358,9 @@ class TestActionsEndpoint:
             comment_markdown=f"{COMMENT_MARKER}\n## GitReview AI\n\nMedium risk.",
         )
         with patch("app.api.actions.validate_shared_secret"):
-            with patch("app.api.actions.handle_actions_request", new_callable=AsyncMock) as mock_handle:
+            with patch(
+                "app.api.actions.handle_actions_request", new_callable=AsyncMock
+            ) as mock_handle:
                 mock_handle.return_value = mock_result
                 resp = self.client.post(
                     "/api/actions/analyze",
@@ -380,7 +383,9 @@ class TestActionsEndpoint:
             comment_markdown=f"{COMMENT_MARKER}\n## Low Risk",
         )
         with patch("app.api.actions.validate_shared_secret"):
-            with patch("app.api.actions.handle_actions_request", new_callable=AsyncMock) as mock_handle:
+            with patch(
+                "app.api.actions.handle_actions_request", new_callable=AsyncMock
+            ) as mock_handle:
                 mock_handle.return_value = mock_result
                 resp = self.client.post(
                     "/api/actions/analyze",
@@ -516,10 +521,13 @@ class TestActionsConfig:
         s = Settings(actions_shared_secret="test-secret")
         assert s.actions_shared_secret == "test-secret"
 
-    def test_actions_shared_secret_defaults_empty(self):
+    def test_actions_shared_secret_defaults_empty(self, monkeypatch):
         from app.core.config import Settings
 
-        s = Settings()
+        # Remove from process env so pydantic-settings sees only the field default
+        monkeypatch.delenv("ACTIONS_SHARED_SECRET", raising=False)
+        # Prevent pydantic-settings from reading the developer's .env file
+        s = Settings(_env_file=None)
         assert s.actions_shared_secret == ""
 
     def test_env_example_contains_actions_secret(self):

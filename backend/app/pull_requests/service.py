@@ -328,8 +328,7 @@ async def analyze_pull_request(
         )
     except GitHubNotFoundError:
         raise PullRequestNotFoundError(
-            f"Pull request #{pull_number} was not found in "
-            f"{repository.owner}/{repository.name}."
+            f"Pull request #{pull_number} was not found in {repository.owner}/{repository.name}."
         )
 
     # Upsert internal PR record with .repository eager-loaded
@@ -355,5 +354,20 @@ async def analyze_pull_request(
         result.status,
         result.risk_tier,
     )
+
+    if result.checklist_items:
+        from app.core.models import ChecklistItemCompletion
+
+        stmt = select(ChecklistItemCompletion.checklist_item_id).where(
+            ChecklistItemCompletion.user_id == user.id,
+            ChecklistItemCompletion.checklist_item_id.in_(
+                [uuid.UUID(item["id"]) for item in result.checklist_items if "id" in item]
+            ),
+        )
+        completed_ids_result = await db.execute(stmt)
+        completed_ids = {str(row[0]) for row in completed_ids_result.all()}
+
+        for item in result.checklist_items:
+            item["completed"] = item.get("id") in completed_ids
 
     return result

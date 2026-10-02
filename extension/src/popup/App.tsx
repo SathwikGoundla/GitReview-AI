@@ -38,7 +38,7 @@ import {
   ApiAuthError,
   ApiNetworkError,
 } from "../api/client";
-import { clearSession, getSession, saveSession } from "../auth/session";
+import { clearSession, getSession } from "../auth/session";
 import { extractPRContext } from "../content/github-pr";
 import { RiskBadge } from "../components/RiskBadge";
 import { ConfidenceBar } from "../components/ConfidenceBar";
@@ -46,6 +46,7 @@ import { RiskRationale } from "../components/RiskRationale";
 import { ReviewerCard } from "../components/ReviewerCard";
 import { Checklist } from "../components/Checklist";
 import { FeedbackForm } from "../components/FeedbackForm";
+import { Dashboard } from "../components/Dashboard";
 import type {
   AnalysisResponse,
   CurrentUserResponse,
@@ -141,6 +142,8 @@ export const App: React.FC = () => {
     "risk" | "reviewer" | "checklist"
   >("risk");
 
+  const [activeTab, setActiveTab] = useState<"analysis" | "dashboard">("analysis");
+
   // ── Bootstrap: check session and active tab ────────────────────────────────
 
   const bootstrap = useCallback(async () => {
@@ -182,10 +185,12 @@ export const App: React.FC = () => {
 
     if (!ctx) {
       setView("no_pr");
+      setActiveTab("dashboard");
       return;
     }
 
     setPrContext(ctx);
+    setActiveTab("analysis");
 
     // 4. Try to find the repository in the user's authorized list
     try {
@@ -246,6 +251,7 @@ export const App: React.FC = () => {
     await clearSession();
     setUser(null);
     setAnalysis(null);
+    setActiveTab("analysis");
     setView("unauthenticated");
   }
 
@@ -308,6 +314,36 @@ export const App: React.FC = () => {
             GitReview AI
           </span>
         </div>
+        {user && (
+          <div style={{ display: "flex", gap: "8px", flex: 1, marginLeft: "16px" }}>
+            <button
+              onClick={() => setActiveTab("analysis")}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: "12px",
+                fontWeight: activeTab === "analysis" ? 600 : 400,
+                color: activeTab === "analysis" ? "#2563eb" : "#6b7280",
+                cursor: "pointer",
+              }}
+            >
+              Analysis
+            </button>
+            <button
+              onClick={() => setActiveTab("dashboard")}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: "12px",
+                fontWeight: activeTab === "dashboard" ? 600 : 400,
+                color: activeTab === "dashboard" ? "#2563eb" : "#6b7280",
+                cursor: "pointer",
+              }}
+            >
+              Dashboard
+            </button>
+          </div>
+        )}
         {user && (
           <div
             style={{ display: "flex", alignItems: "center", gap: "8px" }}
@@ -379,7 +415,11 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {view === "no_pr" && (
+      {user && activeTab === "dashboard" && (
+        <Dashboard />
+      )}
+
+      {activeTab === "analysis" && view === "no_pr" && (
         <div style={{ padding: "24px 16px", textAlign: "center" }}>
           <div style={{ fontSize: "32px", marginBottom: "12px" }}>📋</div>
           <p style={{ color: "#6b7280", lineHeight: 1.5 }}>
@@ -398,7 +438,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {view === "pr_detected" && prContext && (
+      {activeTab === "analysis" && view === "pr_detected" && prContext && (
         <div>
           {/* PR info */}
           <div style={SECTION_STYLE}>
@@ -462,7 +502,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {view === "analyzing" && (
+      {activeTab === "analysis" && view === "analyzing" && (
         <div style={{ padding: "40px 16px", textAlign: "center" }}>
           <div style={{ fontSize: "24px", marginBottom: "12px" }}>🤖</div>
           <div style={{ color: "#374151", fontWeight: 500 }}>
@@ -480,7 +520,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {view === "error" && (
+      {activeTab === "analysis" && view === "error" && (
         <div style={{ padding: "24px 16px" }}>
           <div
             style={{
@@ -512,7 +552,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {view === "result" && analysis && (
+      {activeTab === "analysis" && view === "result" && analysis && (
         <AnalysisView
           analysis={analysis}
           prContext={prContext}
@@ -706,6 +746,15 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({
       {activeSection === "reviewer" && (
         <div style={{ padding: "10px 14px" }}>
           <ReviewerCard recommendation={analysis.reviewer_recommendation} />
+          {analysis.reviewer_recommendation?.id && (
+            <div style={{ marginTop: "12px", borderTop: "1px solid #f3f4f6", paddingTop: "12px" }}>
+              <FeedbackForm
+                analysisId={analysis.analysis_id}
+                predictionType="reviewer_recommendation"
+                predictionReferenceId={analysis.reviewer_recommendation.id}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -715,6 +764,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({
           <Checklist
             items={analysis.checklist_items}
             isFallback={analysis.checklist_is_fallback}
+            analysisId={analysis.analysis_id}
           />
         </div>
       )}

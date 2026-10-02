@@ -62,7 +62,7 @@ from app.github_integration.client import GitHubApiClient
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ── Marker used by the workflow to find and edit existing comments ─────────────
+# â”€â”€ Marker used by the workflow to find and edit existing comments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Must match the marker in the workflow file exactly.
 COMMENT_MARKER = "<!-- gitreview-ai-bot -->"
 
@@ -90,7 +90,7 @@ def _confidence_label(score: float) -> str:
     return "Low"
 
 
-# ── Secret validation ──────────────────────────────────────────────────────────
+# â”€â”€ Secret validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def validate_shared_secret(provided_secret: str) -> None:
@@ -125,7 +125,7 @@ def validate_shared_secret(provided_secret: str) -> None:
         )
 
 
-# ── Repository lookup ──────────────────────────────────────────────────────────
+# â”€â”€ Repository lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def get_repository_by_owner_name(
@@ -162,7 +162,7 @@ async def get_repository_by_owner_name(
     return repo
 
 
-# ── Orchestrator factory (same pattern as pull_requests/service.py) ────────────
+# â”€â”€ Orchestrator factory (same pattern as pull_requests/service.py) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def _build_orchestrator(github_token: str) -> AnalysisOrchestrator:
@@ -176,24 +176,18 @@ def _build_orchestrator(github_token: str) -> AnalysisOrchestrator:
 
     LLD A.20: "A thin adapter in front of the same Orchestrator."
     """
-    settings = get_settings()
-    client = GitHubApiClient(
-        access_token=github_token,
-        api_base=settings.github_api_base,
-    )
     return AnalysisOrchestrator(
-        github_client=client,
         ai_provider=GeminiAdapter(),
         prompt_builder=PromptBuilder(),
         validator=AnalysisResponseValidator(),
         risk_engine=RiskEngine(),
         confidence_calculator=ConfidenceCalculator(),
-        reviewer_service=ReviewerRankingService(github_client=client),
+        reviewer_service=ReviewerRankingService(),
         checklist_generator=ChecklistGenerator(),
     )
 
 
-# ── Comment formatter ──────────────────────────────────────────────────────────
+# â”€â”€ Comment formatter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 def format_pr_comment(
@@ -234,7 +228,7 @@ def format_pr_comment(
 
     if status == "failed":
         lines += [
-            "> ⚠️ **Analysis failed.** The AI pipeline could not complete for this commit.",
+            "> âš ï¸ **Analysis failed.** The AI pipeline could not complete for this commit.",
             "> Please check the GitReview AI workflow logs for details.",
             "",
         ]
@@ -265,7 +259,7 @@ def format_pr_comment(
     # Degraded notice
     if status == "degraded":
         lines += [
-            "> ℹ️ **Note:** AI signals were unavailable for this analysis. "
+            "> â„¹ï¸ **Note:** AI signals were unavailable for this analysis. "
             "The risk tier is based on deterministic signals only.",
             "",
         ]
@@ -310,9 +304,7 @@ def format_pr_comment(
                 cat = item.get("category", "").replace("_", " ").title()
                 src = item.get("trigger_source", "")
                 src_badge = (
-                    "🔒 required"
-                    if src == "deterministic"
-                    else "🤖 AI" if src == "ai" else "🔒+🤖"
+                    "🔒 required" if src == "deterministic" else "🤖 AI" if src == "ai" else "🔒+🤖"
                 )
                 lines.append(f"- [ ] **{cat}** — {src_badge}")
         lines.append("")
@@ -327,7 +319,7 @@ def format_pr_comment(
     return "\n".join(lines)
 
 
-# ── Main service function ──────────────────────────────────────────────────────
+# â”€â”€ Main service function â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def handle_actions_request(
@@ -357,7 +349,7 @@ async def handle_actions_request(
     repo = await get_repository_by_owner_name(db, request.owner, request.name)
 
     # Upsert the PullRequest row (same pattern as pull_requests/service.py)
-    await _upsert_pull_request(
+    pull_request = await _upsert_pull_request(
         db=db,
         repo=repo,
         pr_number=request.pr_number,
@@ -365,14 +357,13 @@ async def handle_actions_request(
     )
 
     # Build and run the orchestrator (reuses the full analysis pipeline)
+    client = GitHubApiClient(access_token=github_token)
     orchestrator = _build_orchestrator(github_token=github_token)
     result = await orchestrator.run_analysis(
         db=db,
-        repository_id=repo.id,
-        owner=request.owner,
-        repo_name=request.name,
-        pr_number=request.pr_number,
+        pull_request=pull_request,
         commit_sha=request.commit_sha,
+        github_client=client,
         triggered_by="github_action",
     )
 
@@ -426,7 +417,7 @@ async def handle_actions_request(
     )
 
 
-# ── PullRequest upsert (mirrors pull_requests/service.py) ─────────────────────
+# â”€â”€ PullRequest upsert (mirrors pull_requests/service.py) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 async def _upsert_pull_request(
@@ -463,13 +454,9 @@ async def _upsert_pull_request(
         )
         db.add(pr)
         await db.flush()
-        logger.info(
-            "actions: created PR row repo_id=%s pr_number=%d", repo.id, pr_number
-        )
+        logger.info("actions: created PR row repo_id=%s pr_number=%d", repo.id, pr_number)
     elif pr.latest_commit_sha != commit_sha:
         pr.latest_commit_sha = commit_sha
-        logger.info(
-            "actions: updated commit SHA pr_id=%s sha=%s", pr.id, commit_sha[:7]
-        )
+        logger.info("actions: updated commit SHA pr_id=%s sha=%s", pr.id, commit_sha[:7])
 
     return pr

@@ -6,21 +6,20 @@
  *
  * Checklist item completion (FR-6.4):
  *   The backend stores completion per-reviewer via checklist_item_completions.
- *   The current API does not expose a PATCH endpoint for completion state,
- *   so completion is tracked as LOCAL-ONLY UI state in this session.
- *   This is clearly labeled as a known limitation in PROJECT_STATE.md.
- *   The backend schema supports it; the API endpoint is deferred to a future step.
+ *   Completion is tracked locally and synchronized with the backend.
  *
  * Category display names map the backend's CHECK constraint enum values to
  * human-readable labels.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { ChecklistItemSchema } from "../types";
+import { apiUpdateChecklistCompletion, ApiClientError } from "../api/client";
 
 interface ChecklistProps {
   items: ChecklistItemSchema[];
   isFallback: boolean;
+  analysisId: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -41,11 +40,45 @@ const TRIGGER_SOURCE_LABELS: Record<string, string> = {
   both: "rule+AI",
 };
 
-export const Checklist: React.FC<ChecklistProps> = ({ items, isFallback }) => {
+export const Checklist: React.FC<ChecklistProps> = ({ items, isFallback, analysisId }) => {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
 
-  const toggleItem = (category: string) => {
-    setChecked((prev) => ({ ...prev, [category]: !prev[category] }));
+  // Initialize from props if available
+  useEffect(() => {
+    const initial: Record<string, boolean> = {};
+    items.forEach(item => {
+      // Cast to any to check for completed property if backend adds it in the future
+      initial[item.category] = !!item.completed;
+    });
+    setChecked(initial);
+  }, [items]);
+
+  const toggleItem = async (item: ChecklistItemSchema) => {
+    const isCurrentlyChecked = !!checked[item.category];
+    const nextState = !isCurrentlyChecked;
+
+    // Optimistic update
+    setChecked((prev) => ({ ...prev, [item.category]: nextState }));
+    setLoading((prev) => ({ ...prev, [item.category]: true }));
+    setError(null);
+
+    try {
+      if (item.id) {
+        await apiUpdateChecklistCompletion(analysisId, item.id, nextState);
+      } else {
+        console.warn("Item has no ID, cannot persist state");
+      }
+    } catch (err) {
+      // Revert optimistic update
+      setChecked((prev) => ({ ...prev, [item.category]: isCurrentlyChecked }));
+      
+      const msg = err instanceof ApiClientError ? err.message : "Failed to update checklist item.";
+      setError(msg);
+    } finally {
+      setLoading((prev) => ({ ...prev, [item.category]: false }));
+    }
   };
 
   const completedCount = Object.values(checked).filter(Boolean).length;
@@ -101,6 +134,20 @@ export const Checklist: React.FC<ChecklistProps> = ({ items, isFallback }) => {
         )}
       </div>
 
+      {error && (
+        <div style={{
+          marginBottom: "8px",
+          padding: "6px",
+          backgroundColor: "#fef2f2",
+          border: "1px solid #fecaca",
+          borderRadius: "4px",
+          color: "#dc2626",
+          fontSize: "11px"
+        }}>
+          {error}
+        </div>
+      )}
+
       {/* Items */}
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         {items.map((item) => {
@@ -108,6 +155,7 @@ export const Checklist: React.FC<ChecklistProps> = ({ items, isFallback }) => {
             CATEGORY_LABELS[item.category] ??
             item.category.replace(/_/g, " ");
           const isChecked = !!checked[item.category];
+          const isLoading = !!loading[item.category];
           const sourceLabel =
             TRIGGER_SOURCE_LABELS[item.trigger_source] ?? item.trigger_source;
 
@@ -118,19 +166,21 @@ export const Checklist: React.FC<ChecklistProps> = ({ items, isFallback }) => {
                 display: "flex",
                 alignItems: "flex-start",
                 gap: "8px",
-                cursor: "pointer",
+                cursor: isLoading ? "not-allowed" : "pointer",
                 padding: "6px 8px",
                 borderRadius: "6px",
                 backgroundColor: isChecked ? "#f0fdf4" : "#f9fafb",
                 border: `1px solid ${isChecked ? "#86efac" : "#e5e7eb"}`,
                 transition: "background-color 0.15s ease",
+                opacity: isLoading ? 0.7 : 1,
               }}
             >
               <input
                 type="checkbox"
                 checked={isChecked}
-                onChange={() => toggleItem(item.category)}
-                style={{ marginTop: "1px", cursor: "pointer", flexShrink: 0 }}
+                disabled={isLoading}
+                onChange={() => toggleItem(item)}
+                style={{ marginTop: "1px", cursor: isLoading ? "not-allowed" : "pointer", flexShrink: 0 }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
@@ -161,18 +211,6 @@ export const Checklist: React.FC<ChecklistProps> = ({ items, isFallback }) => {
             </label>
           );
         })}
-      </div>
-
-      {/* Completion note — local state caveat */}
-      <div
-        style={{
-          marginTop: "8px",
-          fontSize: "10px",
-          color: "#9ca3af",
-          fontStyle: "italic",
-        }}
-      >
-        Checkbox state is local to this session only.
       </div>
     </div>
   );

@@ -1,0 +1,45 @@
+# GitReview AI — Example Workflow for External Repositories
+#
+# Copy this file to your repository at:
+#   .github/workflows/gitreview-ai.yml
+#
+# Prerequisites:
+#   1. A deployed GitReview AI backend.
+#   2. A user has authorized this repository via the GitReview AI Chrome Extension.
+#   3. Two GitHub repository secrets are configured:
+#      - GITREVIEW_BACKEND_URL:    Full URL of the backend (e.g. https://your-app.onrender.com)
+#      - GITREVIEW_SHARED_SECRET:  Shared secret matching the backend's ACTIONS_SHARED_SECRET.
+#                                  Generate with: openssl rand -hex 32
+#
+# What happens:
+#   On every PR open/push/reopen, the workflow calls the GitReview AI backend,
+#   receives a risk assessment, posts a PR comment with the analysis, and applies
+#   a risk-tier label (risk: low, risk: medium, risk: high, risk: critical).
+#
+# The workflow does NOT act as a merge gate — it provides review assistance only.
+
+name: GitReview AI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: gitreview-ai-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze Pull Request
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: GitReview AI Analysis
+        uses: SathwikGoundla/GitReview-AI/.github/actions/gitreview-ai@main
+        with:
+          backend-url: ${{ secrets.GITREVIEW_BACKEND_URL }}
+          shared-secret: ${{ secrets.GITREVIEW_SHARED_SECRET }}

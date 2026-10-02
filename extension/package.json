@@ -1,29 +1,33 @@
 {
   "name": "gitreview-ai-extension",
   "version": "1.0.0",
-  "description": "GitReview AI Chrome Extension — AI-powered Pull Request review assistance",
+  "description": "GitReview AI Chrome Extension â€” AI-powered Pull Request review assistance",
   "private": true,
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "package": "node package.js"
   },
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/react": "^14.2.0",
     "@types/chrome": "^0.0.268",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
+    "adm-zip": "^0.6.1",
+    "archiver": "^8.0.0",
     "jsdom": "^24.0.0",
     "typescript": "^5.4.0",
     "vite": "^5.2.0",
-    "vitest": "^1.4.0",
-    "@testing-library/react": "^14.2.0",
-    "@testing-library/jest-dom": "^6.4.0"
+    "vitest": "^1.4.0"
   }
 }

@@ -82,15 +82,18 @@ class ReviewSuggestionSchema(BaseModel):
 
 
 class ReviewerRecommendationSchema(BaseModel):
+    id: uuid.UUID | None = None
     username: str
     reason: str
     confidence_score: float
 
 
 class ChecklistItemSchema(BaseModel):
+    id: uuid.UUID | None = None
     category: str
     confidence_score: float
     trigger_source: str
+    completed: bool = False
 
 
 class AnalysisResponse(BaseModel):

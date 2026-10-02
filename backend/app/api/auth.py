@@ -174,8 +174,7 @@ async def logout(
     response_model=CurrentUserResponse,
     summary="Get current authenticated user",
     description=(
-        "Returns the authenticated user's GitHub profile. "
-        "Requires a valid X-Session-Token header."
+        "Returns the authenticated user's GitHub profile. Requires a valid X-Session-Token header."
     ),
 )
 async def get_me(

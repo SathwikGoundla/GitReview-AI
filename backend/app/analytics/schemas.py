@@ -82,9 +82,7 @@ class UserAnalyticsResponse(BaseModel):
     failed_analyses: int = Field(0, ge=0)
 
     # Unique PRs
-    unique_prs_analyzed: int = Field(
-        0, ge=0, description="Distinct PRs with at least one analysis"
-    )
+    unique_prs_analyzed: int = Field(0, ge=0, description="Distinct PRs with at least one analysis")
 
     # Risk picture across completed analyses
     risk_distribution: RiskDistribution = Field(default_factory=RiskDistribution)

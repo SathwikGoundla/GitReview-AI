@@ -91,7 +91,7 @@ export const FeedbackForm: React.FC<FeedbackFormProps> = ({
     try {
       await apiSubmitFeedback(analysisId, {
         prediction_type: predictionType,
-        prediction_reference_id: predictionReferenceId,
+        prediction_reference_id: predictionReferenceId!,
         rating,
       });
       setSubmittedRating(rating);

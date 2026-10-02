@@ -177,9 +177,11 @@ def test_04_unauthorized_analysis_returns_404_not_403():
     assert resp.status_code == 404
     data = resp.json()
     # Must not expose the word "exists" or "forbidden" — should be generic not-found
-    assert "not found" in data.get("message", "").lower() or "not found" in str(
-        data.get("detail", "")
-    ).lower() or resp.status_code == 404
+    assert (
+        "not found" in data.get("message", "").lower()
+        or "not found" in str(data.get("detail", "")).lower()
+        or resp.status_code == 404
+    )
     app.dependency_overrides = {}
 
 

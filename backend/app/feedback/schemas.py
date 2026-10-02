@@ -93,9 +93,7 @@ class FeedbackResponse(BaseModel):
     feedback_id: uuid.UUID = Field(..., description="UUID of the persisted feedback record.")
     analysis_id: uuid.UUID = Field(..., description="UUID of the analysis this feedback concerns.")
     prediction_type: PredictionType = Field(..., description="The rated prediction type.")
-    prediction_reference_id: uuid.UUID = Field(
-        ..., description="UUID of the rated prediction row."
-    )
+    prediction_reference_id: uuid.UUID = Field(..., description="UUID of the rated prediction row.")
     rating: FeedbackRating = Field(..., description="The recorded rating.")
     created_at: datetime = Field(..., description="Timestamp when this feedback was persisted.")
 

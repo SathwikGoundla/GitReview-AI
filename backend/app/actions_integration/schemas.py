@@ -75,6 +75,4 @@ class ActionsAnalysisResponse(BaseModel):
     checklist_items: list[ActionsChecklistItem] = Field(default_factory=list)
     checklist_is_fallback: bool = False
     commit_sha: str
-    comment_markdown: str = Field(
-        description="Pre-formatted Markdown for the PR comment body."
-    )
+    comment_markdown: str = Field(description="Pre-formatted Markdown for the PR comment body.")

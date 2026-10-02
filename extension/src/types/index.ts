@@ -139,6 +139,7 @@ export interface ReviewSuggestionSchema {
 
 /** Reviewer recommendation — present only when the module did not abstain */
 export interface ReviewerRecommendationSchema {
+  id: string;
   username: string;
   reason: string;
   confidence_score: number;
@@ -146,9 +147,11 @@ export interface ReviewerRecommendationSchema {
 
 /** One adaptive checklist item */
 export interface ChecklistItemSchema {
+  id: string;
   category: string;
   confidence_score: number;
   trigger_source: string; // "deterministic" | "ai" | "both"
+  completed?: boolean;
 }
 
 /** Full analysis result from POST /api/repositories/{id}/pulls/{number}/analyze */
@@ -178,6 +181,17 @@ export interface AnalysisResponse {
   model_name: string;
   prompt_template_version: string;
   created_at: string;
+}
+
+// ── Checklist Completion ──────────────────────────────────────────────────────
+
+export interface ChecklistCompletionRequest {
+  completed: boolean;
+}
+
+export interface ChecklistCompletionResponse {
+  item_id: string;
+  completed: boolean;
 }
 
 // ── Feedback ──────────────────────────────────────────────────────────────────

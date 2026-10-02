@@ -132,6 +132,7 @@ def _make_analysis_result(
 def _auth_override(user: MagicMock):
     async def _override():
         return user
+
     return _override
 
 
@@ -280,6 +281,7 @@ class TestPRListing:
 
     def test_github_failure_handled(self, auth_client):
         from app.core.exceptions import GitHubError
+
         with patch(
             "app.api.pull_requests.list_pull_requests",
             new_callable=AsyncMock,
@@ -446,6 +448,7 @@ class TestAnalysis:
 
     def test_analyze_failure_returns_error(self, auth_client):
         from app.core.exceptions import AnalysisError
+
         with patch(
             "app.api.pull_requests.analyze_pull_request",
             new_callable=AsyncMock,

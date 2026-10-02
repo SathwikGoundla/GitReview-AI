@@ -77,8 +77,10 @@ Confidence calculation is implemented using a hybrid scoring mechanism with a co
 * `GET /api/repositories/{repository_id}/pulls/{pull_number}`
 * `POST /api/repositories/{repository_id}/pulls/{pull_number}/analyze`
 * `POST /api/analyses/{analysis_id}/feedback`
+* `PATCH /api/analyses/{analysis_id}/checklist/{item_id}`
 * `GET /api/analytics/me`
 * `GET /api/analytics/repositories/{repository_id}`
+* `POST /api/actions/analyze`
 * `GET /health`
 
 ## Architecture
@@ -159,11 +161,77 @@ backend/
 
 ## Current Status
 
-> **Backend implementation completed. The frontend/Chrome Extension and GitHub Actions integration are currently under development.**
+> **Backend and Chrome Extension implementation completed. GitHub Actions integration is implemented.**
 >
-> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, Gemini-based semantic PR analysis, deterministic code-analysis signals, hybrid risk assessment, explainable rationale, confidence scoring, reviewer recommendation, adaptive checklist, feedback API, confidence calibration, and core REST API workflows, individual and repository-level analytics API.
+> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, Gemini-based semantic PR analysis, deterministic code-analysis signals, hybrid risk assessment, explainable rationale, confidence scoring, reviewer recommendation, adaptive checklist, feedback API, checklist completion loop, confidence calibration, core REST API workflows, individual and repository-level analytics API, Chrome Extension dashboard, and GitHub Actions integration.
 >
 > The complete product is still under active development.
+
+## GitHub Actions Integration
+
+### Overview
+
+GitReview AI provides a reusable GitHub Action that automatically analyzes pull requests and posts a risk assessment comment. The action:
+
+1. Calls the GitReview AI backend's `POST /api/actions/analyze` endpoint
+2. Posts a formatted PR comment with risk tier, confidence, reviewer recommendation, and review checklist
+3. Applies a risk-tier label (e.g. `risk: high`) to the PR
+
+The action is **review assistance, not a merge gate** — it never blocks merges.
+
+### Prerequisites
+
+1. A deployed GitReview AI backend
+2. At least one user has authorized the repository via the Chrome Extension
+3. Two GitHub repository secrets configured:
+   - `GITREVIEW_BACKEND_URL` — Full URL of the backend (e.g. `https://your-app.onrender.com`)
+   - `GITREVIEW_SHARED_SECRET` — Shared secret matching the backend's `ACTIONS_SHARED_SECRET`. Generate with: `openssl rand -hex 32`
+
+### Example Workflow
+
+Create `.github/workflows/gitreview-ai.yml` in your repository:
+
+```yaml
+name: GitReview AI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: gitreview-ai-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze Pull Request
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitReview AI Analysis
+        uses: SathwikGoundla/GitReview-AI/.github/actions/gitreview-ai@main
+        with:
+          backend-url: ${{ secrets.GITREVIEW_BACKEND_URL }}
+          shared-secret: ${{ secrets.GITREVIEW_SHARED_SECRET }}
+```
+
+> **Note:** This repository is not yet published to the GitHub Marketplace. The `uses:` path references this repository directly. For local development, use a repository-relative path.
+
+### What Happens After the Action Runs
+
+* **On success:** A PR comment is posted (or updated) with the risk assessment, and a `risk: <tier>` label is applied.
+* **On 404 (repo not authorized):** The action exits with a warning — no comment is posted.
+* **On 401 (bad secret):** The action fails with an error message.
+* **Comment idempotency:** Repeated runs on the same PR update the existing comment rather than creating new ones.
+
+### Security
+
+* The shared secret is never printed in logs or error messages
+* The `GITHUB_TOKEN` is automatically available and scoped to the repository
+* Authentication uses `X-Actions-Secret` header with timing-safe comparison
 
 ## Roadmap
 
@@ -186,13 +254,13 @@ backend/
 - [x] Confidence calibration
 - [x] Core REST API workflows
 - [x] Backend testing and quality verification
+- [x] Chrome Extension UI (popup, dashboard, analytics, repository management)
+- [x] GitHub Actions integration (reusable composite action + workflow)
 
-### In Development / Planned
-- [ ] Chrome Extension UI
-- [ ] GitHub Actions integration
+### Planned
 - [ ] End-to-end integration testing
 - [ ] Production deployment
-- [ ] Analytics dashboard
+- [ ] GitHub Marketplace publication
 
 ## Testing
 

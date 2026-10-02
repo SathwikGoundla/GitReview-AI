@@ -111,6 +111,10 @@ class PromptTooLargeError(AnalysisError):
     error_code = "prompt_too_large"
 
 
+class PRTooLargeError(AnalysisError):
+    http_status = 413
+    error_code = "PR_TOO_LARGE"
+
 # ── Database ───────────────────────────────────────────────────────────────────
 
 

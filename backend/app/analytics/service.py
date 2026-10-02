@@ -181,7 +181,9 @@ async def get_user_analytics(db: AsyncSession, user: User) -> UserAnalyticsRespo
         )
     )
     avg_conf_raw = avg_conf_result.scalar_one()
-    avg_confidence: float | None = round(float(avg_conf_raw), 1) if avg_conf_raw is not None else None
+    avg_confidence: float | None = (
+        round(float(avg_conf_raw), 1) if avg_conf_raw is not None else None
+    )
 
     # ── 9. Reviewer recommendation stats ──────────────────────────────────────
     # Count how many completed analyses have a rank=1 recommendation row
@@ -243,12 +245,11 @@ async def get_repository_analytics(
     This function only aggregates data — it does not re-check authorization.
     """
     # ── 1. Repository identity ─────────────────────────────────────────────────
-    repo_result = await db.execute(
-        select(Repository).where(Repository.id == repository_id)
-    )
+    repo_result = await db.execute(select(Repository).where(Repository.id == repository_id))
     repo = repo_result.scalar_one_or_none()
     if repo is None:
         from app.core.exceptions import RepositoryNotFoundError
+
         raise RepositoryNotFoundError(
             f"Repository {repository_id} not found.",
             detail=f"repository_id={repository_id}",
@@ -265,9 +266,7 @@ async def get_repository_analytics(
 
     # ── 3. PR IDs for this repository ─────────────────────────────────────────
     pr_ids_sq = (
-        select(PullRequest.id)
-        .where(PullRequest.repository_id == repository_id)
-        .scalar_subquery()
+        select(PullRequest.id).where(PullRequest.repository_id == repository_id).scalar_subquery()
     )
 
     # ── 4. Analysis status counts ─────────────────────────────────────────────
@@ -329,7 +328,9 @@ async def get_repository_analytics(
         )
     )
     avg_conf_raw = avg_conf_result.scalar_one()
-    avg_confidence: float | None = round(float(avg_conf_raw), 1) if avg_conf_raw is not None else None
+    avg_confidence: float | None = (
+        round(float(avg_conf_raw), 1) if avg_conf_raw is not None else None
+    )
 
     # ── 10. Reviewer stats ────────────────────────────────────────────────────
     rec_made_result = await db.execute(

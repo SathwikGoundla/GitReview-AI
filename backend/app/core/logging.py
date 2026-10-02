@@ -15,7 +15,7 @@ from typing import Any
 # Patterns that indicate a field might contain raw source / diff content.
 # These are scrubbed from log records before writing.
 _SENSITIVE_FIELD_PATTERNS = re.compile(
-    r"(diff|patch|content|source|raw|body|text|code|file_content)",
+    r"(diff|patch|content|source|raw|body|text|code|file_content|token|secret|key|password|credential)",
     re.IGNORECASE,
 )
 

@@ -17,11 +17,17 @@
  *   - Popup is a standard HTML page with a full React render.
  */
 
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  if (mode === "production" && !env.VITE_BACKEND_URL) {
+    throw new Error("BUILD FAILED: Missing VITE_BACKEND_URL in production configuration.");
+  }
+  
+  return {
   plugins: [react()],
 
   // Copy public/ (manifest.json + icons) to dist/ as-is
@@ -53,4 +59,5 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["src/test-setup.ts"],
   },
+  };
 });

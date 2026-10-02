@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     gemini_max_retries: int = Field(default=2)
 
     # --- Risk Engine ---
+    max_pr_lines: int = Field(default=3000)
+    max_pr_bytes: int = Field(default=1024 * 1024)  # 1 MB
     # Configurable path patterns for sensitive-path detection
     sensitive_path_patterns: list[str] = Field(
         default=[

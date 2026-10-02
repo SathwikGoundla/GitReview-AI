@@ -215,6 +215,7 @@ async def analyze_pr(
         ],
         reviewer_recommendation=(
             ReviewerRecommendationSchema(
+                id=result.reviewer_recommendation.get("id"),
                 username=result.reviewer_recommendation["username"],
                 reason=result.reviewer_recommendation["reason"],
                 confidence_score=result.reviewer_recommendation["confidence_score"],
@@ -224,9 +225,11 @@ async def analyze_pr(
         ),
         checklist_items=[
             ChecklistItemSchema(
+                id=item.get("id"),
                 category=item["category"],
                 confidence_score=item["confidence_score"],
                 trigger_source=item["trigger_source"],
+                completed=item.get("completed", False),
             )
             for item in result.checklist_items
         ],

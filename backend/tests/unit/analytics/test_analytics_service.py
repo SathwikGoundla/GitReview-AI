@@ -44,6 +44,7 @@ def _make_user(username: str = "sathwik", uid: uuid.UUID | None = None) -> Magic
 def _noop_db():
     async def _gen():
         yield MagicMock()
+
     return _gen()
 
 
@@ -68,6 +69,7 @@ class TestRiskDistributionSchema:
 
     def test_defaults_all_zero(self):
         from app.analytics.schemas import RiskDistribution
+
         r = RiskDistribution()
         assert r.low == 0
         assert r.medium == 0
@@ -76,11 +78,13 @@ class TestRiskDistributionSchema:
 
     def test_explicit_values(self):
         from app.analytics.schemas import RiskDistribution
+
         r = RiskDistribution(low=1, medium=2, high=3, critical=4)
         assert r.critical == 4
 
     def test_serialises_correctly(self):
         from app.analytics.schemas import RiskDistribution
+
         d = RiskDistribution(low=5).model_dump()
         assert d["low"] == 5
         assert "medium" in d
@@ -91,17 +95,20 @@ class TestFeedbackSummarySchema:
 
     def test_defaults(self):
         from app.analytics.schemas import FeedbackSummary
+
         fb = FeedbackSummary()
         assert fb.total == 0
         assert fb.helpful_pct is None
 
     def test_explicit_with_pct(self):
         from app.analytics.schemas import FeedbackSummary
+
         fb = FeedbackSummary(total=10, helpful=7, unhelpful=3, helpful_pct=70.0)
         assert fb.helpful_pct == 70.0
 
     def test_zero_total_null_pct(self):
         from app.analytics.schemas import FeedbackSummary
+
         fb = FeedbackSummary(total=0, helpful=0, unhelpful=0)
         assert fb.helpful_pct is None
 
@@ -114,11 +121,13 @@ class TestRiskDistributionBuilder:
 
     def test_empty_input(self):
         from app.analytics.service import _risk_distribution_from_rows
+
         r = _risk_distribution_from_rows([])
         assert r.low == r.medium == r.high == r.critical == 0
 
     def test_partial_tiers(self):
         from app.analytics.service import _risk_distribution_from_rows
+
         r = _risk_distribution_from_rows([("high", 5), ("critical", 2)])
         assert r.high == 5
         assert r.critical == 2
@@ -127,6 +136,7 @@ class TestRiskDistributionBuilder:
     def test_unknown_tier_ignored(self):
         """A bad DB value must never crash the endpoint."""
         from app.analytics.service import _risk_distribution_from_rows
+
         r = _risk_distribution_from_rows([("unknown", 99), ("low", 1)])
         assert r.low == 1
         assert r.medium == 0
@@ -137,16 +147,19 @@ class TestFeedbackSummaryBuilder:
 
     def test_zero_total_no_pct(self):
         from app.analytics.service import _feedback_summary
+
         fb = _feedback_summary(0, 0)
         assert fb.helpful_pct is None
 
     def test_all_helpful(self):
         from app.analytics.service import _feedback_summary
+
         fb = _feedback_summary(10, 0)
         assert fb.helpful_pct == 100.0
 
     def test_rounding(self):
         from app.analytics.service import _feedback_summary
+
         # 1/3 → 33.3%
         fb = _feedback_summary(1, 2)
         assert fb.helpful_pct == 33.3
@@ -168,6 +181,7 @@ class TestUserAnalyticsEndpoint:
     def test_authenticated_returns_200(self):
         """Test 14 — valid session gets 200."""
         from app.analytics.schemas import UserAnalyticsResponse
+
         user = _make_user()
         mock_response = UserAnalyticsResponse(
             user_id=str(user.id), github_username=user.github_username
@@ -184,10 +198,9 @@ class TestUserAnalyticsEndpoint:
     def test_response_contains_user_id(self):
         """Test 15 — user_id in response matches session user."""
         from app.analytics.schemas import UserAnalyticsResponse
+
         user = _make_user(username="sathwik")
-        mock_response = UserAnalyticsResponse(
-            user_id=str(user.id), github_username="sathwik"
-        )
+        mock_response = UserAnalyticsResponse(user_id=str(user.id), github_username="sathwik")
         client = _make_client(user)
         with patch(
             "app.api.analytics.get_user_analytics",
@@ -202,6 +215,7 @@ class TestUserAnalyticsEndpoint:
     def test_empty_data_returns_zeroes(self):
         """Test 16 — brand-new user with no analyses gets zeroes, not errors."""
         from app.analytics.schemas import UserAnalyticsResponse
+
         user = _make_user()
         mock_response = UserAnalyticsResponse(
             user_id=str(user.id),
@@ -222,6 +236,7 @@ class TestUserAnalyticsEndpoint:
     def test_response_schema_has_required_keys(self):
         """Test 17 — all expected top-level keys present."""
         from app.analytics.schemas import UserAnalyticsResponse
+
         user = _make_user()
         mock_response = UserAnalyticsResponse(
             user_id=str(user.id), github_username=user.github_username
@@ -235,8 +250,13 @@ class TestUserAnalyticsEndpoint:
         _restore()
         keys = set(resp.json().keys())
         for expected in [
-            "user_id", "github_username", "total_analyses", "completed_analyses",
-            "risk_distribution", "feedback_given", "reviewer_stats",
+            "user_id",
+            "github_username",
+            "total_analyses",
+            "completed_analyses",
+            "risk_distribution",
+            "feedback_given",
+            "reviewer_stats",
             "authorized_repository_count",
         ]:
             assert expected in keys, f"Missing key: {expected}"
@@ -244,6 +264,7 @@ class TestUserAnalyticsEndpoint:
     def test_risk_distribution_nested_schema(self):
         """Test 18 — risk_distribution contains low/medium/high/critical."""
         from app.analytics.schemas import RiskDistribution, UserAnalyticsResponse
+
         user = _make_user()
         mock_response = UserAnalyticsResponse(
             user_id=str(user.id),
@@ -264,6 +285,7 @@ class TestUserAnalyticsEndpoint:
     def test_user_isolation_session_drives_scope(self):
         """Test 19 — two different users get separate analytics calls."""
         from app.analytics.schemas import UserAnalyticsResponse
+
         user_a = _make_user(username="alice")
         user_b = _make_user(username="bob")
 
@@ -271,9 +293,7 @@ class TestUserAnalyticsEndpoint:
 
         async def _fake_analytics(db, user):
             calls.append(user.github_username)
-            return UserAnalyticsResponse(
-                user_id=str(user.id), github_username=user.github_username
-            )
+            return UserAnalyticsResponse(user_id=str(user.id), github_username=user.github_username)
 
         # Request as user_a
         client_a = _make_client(user_a)
@@ -306,6 +326,7 @@ class TestUserAnalyticsEndpoint:
     def test_feedback_given_nested_schema(self):
         """Test 21 — feedback_given has total/helpful/unhelpful/helpful_pct."""
         from app.analytics.schemas import FeedbackSummary, UserAnalyticsResponse
+
         user = _make_user()
         mock_response = UserAnalyticsResponse(
             user_id=str(user.id),
@@ -426,6 +447,7 @@ class TestRepositoryAnalyticsEndpoint:
         app.dependency_overrides[get_db] = _gen_db(mock_db)
 
         from app.core.exceptions import RepositoryNotFoundError
+
         with patch(
             "app.api.analytics.get_repository_analytics",
             new=AsyncMock(side_effect=RepositoryNotFoundError("not found")),
@@ -487,9 +509,16 @@ class TestRepositoryAnalyticsEndpoint:
         _restore()
         keys = set(resp.json().keys())
         for expected in [
-            "repository_id", "github_repo_id", "owner", "name", "full_name",
-            "total_analyses", "risk_distribution", "feedback_received",
-            "reviewer_stats", "authorized_user_count",
+            "repository_id",
+            "github_repo_id",
+            "owner",
+            "name",
+            "full_name",
+            "total_analyses",
+            "risk_distribution",
+            "feedback_received",
+            "reviewer_stats",
+            "authorized_user_count",
         ]:
             assert expected in keys, f"Missing key: {expected}"
 
@@ -500,6 +529,7 @@ class TestRepositoryAnalyticsEndpoint:
         access_row = self._make_access_row()
 
         from app.analytics.schemas import RepositoryAnalyticsResponse
+
         mock_response = RepositoryAnalyticsResponse(
             repository_id=str(repo_id),
             github_repo_id=7,
@@ -533,6 +563,7 @@ class TestRepositoryAnalyticsEndpoint:
         access_row = self._make_access_row()
 
         from app.analytics.schemas import RepositoryAnalyticsResponse, RiskDistribution
+
         mock_response = RepositoryAnalyticsResponse(
             repository_id=str(repo_id),
             github_repo_id=8,
@@ -587,6 +618,7 @@ class TestRepositoryAnalyticsEndpoint:
         access_row = self._make_access_row()
 
         from app.analytics.schemas import RepositoryAnalyticsResponse
+
         mock_response = RepositoryAnalyticsResponse(
             repository_id=str(repo_id),
             github_repo_id=9,
@@ -670,6 +702,8 @@ class TestRegression:
 
 def _gen_db(mock_db):
     """Returns an async generator FUNCTION (not a generator) for use as DI override."""
+
     async def _gen():
         yield mock_db
+
     return _gen  # return the FUNCTION, not a called instance
