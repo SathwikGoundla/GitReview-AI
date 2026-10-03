@@ -49,6 +49,9 @@
 - **Test isolation:** `backend/tests/conftest.py` forces test values for database URLs and credentials (previously `setdefault`). Verified: with a hostile `DATABASE_URL` in the shell, tests still see the forced localhost test URL. E2E tests use in-memory SQLite with `get_db` overridden.
 - **Repository hygiene:** `.gitignore` repaired (it contained UTF-16 bytes); `extension/dist` untracked (generated output); scratch file `extension/test_zip.js` removed; `aiosqlite` and `sqlalchemy[asyncio]` declared in `pyproject.toml`.
 
+## Step 21C — Dependency Correction: Complete
+- **Dependency fix:** `pydantic-settings` requirement in `backend/pyproject.toml` bumped from `>=2.3.0` to `>=2.7.0` because the symbol `NoDecode` (used for `ALLOWED_ORIGINS` and `SENSITIVE_PATH_PATTERNS`) was introduced in version `2.7.0`.
+
 ## Verified Results (this round)
 | Check | Command / location | Result |
 |-------|--------------------|--------|
