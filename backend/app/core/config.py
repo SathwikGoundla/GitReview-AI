@@ -5,10 +5,40 @@ Loads all settings from environment variables. No secrets in code.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+def _parse_str_list(value: object, field_name: str) -> list[str]:
+    """Parse a list-of-strings setting from env input.
+
+    Accepted: an already-parsed list, a JSON array string ('["a","b"]'),
+    or a comma-separated string ('a,b'). Empty items are dropped.
+    Anything else raises ValueError (surfaced as a pydantic validation error).
+    """
+    if isinstance(value, (list, tuple)):
+        items = list(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            try:
+                items = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{field_name}: invalid JSON list") from exc
+            if not isinstance(items, list):
+                raise ValueError(f"{field_name}: JSON value must be a list")
+        else:
+            items = text.split(",")
+    else:
+        raise ValueError(f"{field_name}: expected a list or string")
+
+    if not all(isinstance(i, str) for i in items):
+        raise ValueError(f"{field_name}: all items must be strings")
+    return [i.strip() for i in items if i.strip()]
 
 
 class Settings(BaseSettings):
@@ -22,7 +52,7 @@ class Settings(BaseSettings):
     # --- Application ---
     app_env: str = Field(default="development")
     debug: bool = Field(default=False)
-    allowed_origins: list[str] = Field(default=["http://localhost:3000"])
+    allowed_origins: Annotated[list[str], NoDecode] = Field(default=["http://localhost:3000"])
 
     # --- Database ---
     database_url: str = Field(default="postgresql+asyncpg://localhost/gitreview_ai")
@@ -50,7 +80,7 @@ class Settings(BaseSettings):
     max_pr_lines: int = Field(default=3000)
     max_pr_bytes: int = Field(default=1024 * 1024)  # 1 MB
     # Configurable path patterns for sensitive-path detection
-    sensitive_path_patterns: list[str] = Field(
+    sensitive_path_patterns: Annotated[list[str], NoDecode] = Field(
         default=[
             "auth/",
             "authentication/",
@@ -94,17 +124,13 @@ class Settings(BaseSettings):
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
-    def split_origins(cls, v: str | list) -> list[str]:
-        if isinstance(v, str):
-            return [o.strip() for o in v.split(",")]
-        return v
+    def parse_origins(cls, v: object) -> list[str]:
+        return _parse_str_list(v, "allowed_origins")
 
     @field_validator("sensitive_path_patterns", mode="before")
     @classmethod
-    def split_patterns(cls, v: str | list) -> list[str]:
-        if isinstance(v, str):
-            return [p.strip() for p in v.split(",")]
-        return v
+    def parse_patterns(cls, v: object) -> list[str]:
+        return _parse_str_list(v, "sensitive_path_patterns")
 
     @property
     def is_production(self) -> bool:

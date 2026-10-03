@@ -1,158 +1,92 @@
-# GitReview AI â€” Project State
-
-## Project Identity
-- Full project title: GitReview AI
-- Project purpose: AI-Powered Pull Request Review Assistance
-- Repository/local path: D:\Projects\PR-ANALYTICS\GitReview-AI
-- Current architecture: FastAPI Backend, Supabase PostgreSQL DB, GitHub OAuth, Gemini API integration, and GitHub Actions integration. Frontend (Chrome extension) pending.
-
-## Current Status
-- Completed: Backend API layer, authentication, PR analysis orchestration, risk assessment, Gemini integration, Feedback API, Analytics API, GitHub Actions API, Checklist Completion API and Loop, Chrome Extension Dashboard & Analytics UI, GitHub Actions Composite Action.
-- In progress: Project state documentation and continuity.
-- Pending: End-to-end integration testing, production deployment, GitHub Marketplace publication.
-
-## Backend Status
-Documented implemented backend components:
-- FastAPI application
-- Authentication/GitHub OAuth
-- Repository APIs
-- Pull Request APIs
-- Analysis orchestration
-- Deterministic risk engine
-- AI provider interface
-- Gemini adapter
-- Feedback API
-- Analytics API
-- GitHub Actions API
-- Checklist API
-
-## Database Status
-- PostgreSQL/Supabase
-- Migration revision: 0001_initial_schema (head)
-- 17 tables
-- Migration status: Current (up-to-date)
-- Schema changes currently pending: NO
-
-## External Integrations
-- GitHub OAuth: READY
-- Gemini: READY
-- Gemini model: gemini-3.8-flash
-- Supabase/PostgreSQL: READY
-- GitHub Actions shared-secret configuration: READY
-
-## API Inventory
-- GET /health
-- GET /openapi.json
-- GET /api/auth/login
-- GET /api/auth/callback
-- GET /api/auth/me
-- POST /api/auth/logout
-- GET /api/repositories
-- POST /api/repositories/authorize
-- DELETE /api/repositories/{repository_id}
-- GET /api/repositories/{repository_id}/pulls
-- GET /api/repositories/{repository_id}/pulls/{pull_number}
-- POST /api/repositories/{repository_id}/pulls/{pull_number}/analyze
-- POST /api/analyses/{analysis_id}/feedback
-- PATCH /api/analyses/{analysis_id}/checklist/{item_id}
-- GET /api/analytics/me
-- GET /api/analytics/repositories/{repository_id}
-- POST /api/actions/analyze
-
-## Testing Status
-- Robust test coverage verified for the backend API and orchestrator.
-- Step 16 baseline established successfully.
-- Analytics API fully tested (35 tests discovered during inspection covering schemas, service logic, data aggregation, authentication, and IDOR protection).
-
-## Completed Steps
-- **Through Step 16**: Foundation, Database schemas, API endpoints, AI orchestrator, deterministic risk engine, Gemini adapter, and GitHub Actions API were completely implemented. The backend handles its own secrets and integrations safely.
-- **Step 17 â€” Analytics API Layer**: Completely implemented and thoroughly tested.
-- **Step 21A â€” Pre-Deployment Audit & Fixes**: Completed and validated all 3 blocker fixes cleanly without side effects.
-
-## Step 17 â€” Analytics API Layer
-- Already implemented completely.
-- Endpoints:
-  - GET /api/analytics/me
-  - GET /api/analytics/repositories/{repository_id}
-- SQL aggregation approach utilized (no redundant caching tables needed for MVP scale).
-- Full authentication and access protection enforced via active repository authorizations.
-- IDOR protection implemented properly (returns 404 for unauthorized repos to prevent resource enumeration).
-- Existing analytics tests cover edge cases comprehensively.
-- No migration required for this step.
-
-## Step 18 â€” Feedback and Checklist Completion Loop
-- Added `PATCH /api/analyses/{analysis_id}/checklist/{item_id}` backend endpoint.
-- Handled ID mapping logic for `ChecklistItem` and `ReviewerRecommendation`.
-- Updated `AnalysisResult` and schema with `completed` flag checking the backend `checklist_item_completions`.
-- Wired up frontend extension checklist components to optimistic UI updates.
-- Tested and verified.
-
-## Step 19 â€” Extension Dashboard and Analytics UI
-- Updated `extension/src/popup/App.tsx` navigation to toggle between "Analysis" and "Dashboard", defaulting to Dashboard when no PR context is detected.
-- Created `extension/src/components/Dashboard.tsx` to orchestrate analytics and repositories.
-- Created `extension/src/components/AnalyticsView.tsx` to display User Analytics and Repository Analytics visually based on backend schemas.
-- Created `extension/src/components/RepositoryManager.tsx` to fetch authorized repositories and handle their revocation.
-- Added comprehensive unit tests in `extension/src/__tests__/dashboard.test.tsx` achieving full test coverage (106 tests total).
-- Reused all existing backend API endpoints properly without modifications to backend/DB.
-
-## Step 20 â€” GitHub Actions Integration Script
-- Created `.github/actions/gitreview-ai/action.yml` â€” reusable composite GitHub Action.
-- Action inputs: `backend-url` (required), `shared-secret` (required).
-- Action outputs: `risk-tier`, `status`.
-- Authentication: `X-Actions-Secret` header (timing-safe hmac.compare_digest).
-- Backend endpoint reused: `POST /api/actions/analyze` (no new endpoints created).
-- Request contract: `{ owner, name, pr_number, commit_sha }` matching `ActionsAnalyzeRequest` schema exactly.
-- Response: `ActionsAnalysisResponse` with `comment_markdown`, `risk_tier`, `status`, `risk_confidence`, etc.
-- Action runner: composite bash script using curl + python3 for JSON parsing.
-- Comment posting: `actions/github-script@v7` with idempotent marker `<!-- gitreview-ai-bot -->`.
-- Label application: creates/applies `risk: <tier>` labels, removes stale risk labels.
-- Created `.github/actions/gitreview-ai/example-workflow.yml` â€” documented example for external repos.
-- Created `backend/tests/unit/actions_integration/test_action_definition.py` â€” 35 tests covering structure, inputs, outputs, security, backend contract, error handling, and workflow compatibility.
-- Updated `README.md` with GitHub Actions integration section, example workflow, prerequisites, and security notes.
-- Test-isolation fix: `test_actions_shared_secret_defaults_empty` uses `monkeypatch.delenv("ACTIONS_SHARED_SECRET", raising=False)` and `Settings(_env_file=None)` for environment isolation.
-- Final Backend Test Count: 500/500 PASSing.
-- Step 20 Action Test Count: 35/35 PASSing.
-- Extension Test Count: 106/106 PASSing.
-- Extension Build: PASS.
-- Extension Typecheck (`tsc --noEmit`): PASS.
-- Ruff Check: PASS.
-- Ruff Format: PASS.
-- Security Verification: PASS (no secrets exposed or logged).
-- Database changes: NONE.
-- Existing workflow `.github/workflows/gitreview-ai.yml` preserved and verified compatible.
-
-## Step 21A â€” Pre-Deployment Audit & Fixes
-- Performed rigorous code audit identifying 3 blockers:
-  1. Unicode/encoding regression in `backend/app/actions_integration/service.py` (`_TIER_EMOJI`).
-  2. Ruff E402 and F401 violations in `backend/tests/e2e/test_full_workflow_e2e.py` (and `test_actions_flow_e2e.py`) caused by `os.environ` setup and mock injection.
-  3. Missing `typecheck` script in `extension/package.json`.
-- Fixed the Unicode regression by replacing mangled strings with direct UTF-8 emojis (âšª, ðŸŸ¢, ðŸŸ¡, ðŸ”´).
-- Fixed the E2E tests by refactoring module-level imports and isolating test database/API mocks into a `monkeypatch` pytest fixture (`_setup_monkeypatches`), completely resolving all Ruff errors without suppressing E402 globally.
-- Fixed the extension by adding `"typecheck": "tsc --noEmit"` to `extension/package.json`.
-- Validated all backend tests (PASS), e2e tests (PASS), extension tests (PASS), and Ruff formatting (PASS).
-- Preserved existing logic, E2E assertions, external integrations, and database schemas (0 changes to DB).
-
-## Current Known Limitations / Pending Product Work
-- End-to-end integration testing is pending.
-- Production deployment/hardening remains pending.
-- GitHub Marketplace publication is pending.
-
-## Decisions
-- All aggregation is performed in SQL (COUNT, GROUP BY, AVG) on-the-fly rather than populating nightly batch metrics tables to fit the MVP scale and maintain simplicity.
-- The Actions integration idempotency is handled by the GitHub workflow script updating a marker comment rather than the backend tracking comment IDs.
-
-## Known Issues
-- Deprecation of the gemini-2.5-flash model encountered, successfully updated to gemini-3.8-flash.
-
-## Step 21B — Production Hardening & Pre-deployment Readiness
-- **Status:** Complete
-- Implemented production environment preflight checks, database connection pool hardening, PR size limits, structured logging sanitization, and Vite production build enforcement.
-- Backend Unit Tests: PASS (100%)
-- Backend E2E Tests: PASS (100%)
-- Extension Vitest Suite: PASS (100%)
-- Security Scan: Bandit found 0 high/medium issues.
-- Packaging extension ZIP correctly packages dist/ with valid size (0.05MB).
-
-## Next Step
-- Step 21: End-to-End Integration & Production Hardening / Marketplace Readiness.
-
+# GitReview AI — Project State
+
+> Single source of truth for current project status. `backend/PROJECT_STATE.md` is a legacy historical log and is not kept current.
+> Last verified: 2026-10-03, on top of baseline commit `a43774d262a723134f8990aca0dd4be0fc4848f3`.
+> The commit SHA that contains this file cannot be written into the file itself; the final SHA and the clean ZIP are reported in the verification report and `git log`.
+
+## Project Identity
+- Project: GitReview AI — AI-Powered Pull Request Review Assistance
+- Architecture: modular-monolith FastAPI backend, Supabase PostgreSQL, GitHub OAuth, Google Gemini, Manifest V3 Chrome Extension (React + TypeScript + Vite), GitHub Actions composite action.
+- Branch convention: `master`.
+
+## Implementation Status
+| Area | Status |
+|------|--------|
+| Backend API (auth, repositories, PRs, analysis, feedback, analytics, Actions endpoint) | Implemented, tested (mocked services + in-memory DB) |
+| AI pipeline (Gemini adapter, prompt builder, validator, risk, confidence, reviewer, checklist) | Implemented, tested with mocks |
+| Chrome Extension (popup, analysis view, feedback, checklist completion, dashboard, analytics, repository management) | Implemented, tested (Vitest, mocked fetch/chrome) |
+| GitHub Actions integration (`.github/actions/gitreview-ai`) | Implemented, tested at the definition/contract level |
+| Production preflight, PR size limits, extension production-build enforcement | Implemented, tested |
+| Deployment | **Not done** |
+| Live end-to-end validation (real GitHub, Gemini, Supabase) | **Not done** |
+| GitHub Marketplace publication | Not done |
+
+## Gemini Model
+- Default and configured model: `gemini-2.5-flash` (`GEMINI_MODEL` in `backend/app/core/config.py` and `backend/.env.example`).
+- The recorded analysis `model_name` (persisted and returned) now comes from `settings.gemini_model`; cached results report the model stored on that row. Previously a second hardcoded constant was used.
+- An earlier note claimed a deprecation and a switch to `gemini-3.8-flash`. No source file supports that and it has been removed. Model availability against Google's current documentation has NOT been verified here; check it before deployment.
+
+## API Inventory (verified against the live OpenAPI schema: 16 endpoints)
+- `GET /health`
+- Auth: `GET /api/auth/login`, `GET /api/auth/callback`, `GET /api/auth/me`, `POST /api/auth/logout`
+- Repositories: `GET /api/repositories`, `POST /api/repositories/authorize`, `DELETE /api/repositories/{repository_id}/access`
+- Pull requests: `GET /api/repositories/{repository_id}/pulls`, `GET /api/repositories/{repository_id}/pulls/{pull_number}`, `POST /api/repositories/{repository_id}/pulls/{pull_number}/analyze`
+- Feedback / checklist: `POST /api/analyses/{analysis_id}/feedback`, `PATCH /api/analyses/{analysis_id}/checklist/{item_id}`
+- Analytics: `GET /api/analytics/me`, `GET /api/analytics/repositories/{repository_id}`
+- Actions: `POST /api/actions/analyze`
+
+## Database
+- PostgreSQL/Supabase, migration `0001_initial_schema`, 17 tables. No schema or migration changes in this round.
+
+## Step 21A — Pre-Deployment Audit: Complete
+- Fixed an emoji encoding regression in the Actions service, E402/F401 problems in the E2E tests, and the missing `typecheck` script in `extension/package.json`.
+
+## Step 21B — Production Hardening: Complete (code and tests only; not deployed)
+- **Preflight** (`python -m app.core.preflight`, run from `backend/`): required secrets present, no placeholders or weak values (short, repeated-character, whole-value weak words; a long value merely containing "secret" is accepted), **`ENCRYPTION_KEY` validated as a real Fernet key** (separate from generic secret validation), no wildcard or localhost CORS in production, no placeholder extension ID, valid exact `chrome-extension://<id>` accepted. Secret values are never printed.
+- **PR size limits:** `MAX_PR_LINES` (default 3000, lines added + removed) and `MAX_PR_BYTES` (default 1048576, UTF-8 size of diff text). Exact boundary accepted, one over rejected, HTTP 413, error code `PR_TOO_LARGE`, raised before any AI call or persistence. The Actions step fails visibly and posts no comment.
+- **List settings:** `ALLOWED_ORIGINS` and `SENSITIVE_PATH_PATTERNS` now accept a comma-separated string or a JSON array (`NoDecode` + explicit parser); invalid JSON fails validation. Previously the comma form documented in `.env.example` crashed `Settings` under pydantic-settings 2.15.0.
+- **Extension production build:** requires `VITE_BACKEND_URL`; the build fails without it. The dev-only `http://localhost:8000` fallback string remains in the bundle but is unreachable in production builds.
+- **Test isolation:** `backend/tests/conftest.py` forces test values for database URLs and credentials (previously `setdefault`). Verified: with a hostile `DATABASE_URL` in the shell, tests still see the forced localhost test URL. E2E tests use in-memory SQLite with `get_db` overridden.
+- **Repository hygiene:** `.gitignore` repaired (it contained UTF-16 bytes); `extension/dist` untracked (generated output); scratch file `extension/test_zip.js` removed; `aiosqlite` and `sqlalchemy[asyncio]` declared in `pyproject.toml`.
+
+## Verified Results (this round)
+| Check | Command / location | Result |
+|-------|--------------------|--------|
+| Backend baseline (before changes) | `pytest -q` in `backend/` | 500 passed |
+| Backend final | `pytest -q` in `backend/` | **519 passed**, 1 warning (pytest-asyncio config deprecation notice) |
+| E2E | `pytest tests/e2e` | 21 passed |
+| Preflight unit tests | `tests/unit/core/test_preflight.py` | 20 passed |
+| Config list parsing tests | `tests/unit/core/test_config_lists.py` | 10 passed |
+| Size-limit + model-name tests | `tests/unit/analysis/test_size_limits.py` | 5 passed |
+| Actions (unit + E2E) | `tests/unit/actions_integration` + `tests/e2e/test_actions_flow_e2e.py` | 97 passed |
+| Preflight CLI scenarios | real `python -m app.core.preflight`, isolated child env, fake values | 16/16 scenarios behaved as expected |
+| Ruff | `ruff check .` / `ruff format --check .` in `backend/` | pass / pass (baseline HEAD had 19 `ruff check` errors; all fixed without suppressing rules) |
+| Extension tests | `npm test` | 106 passed (6 files) |
+| Extension typecheck | `npm run typecheck` | pass |
+| Extension dev build | `vite build --mode development` | pass |
+| Prod build without `VITE_BACKEND_URL` | `vite build --mode production` | fails as required |
+| Prod build with fake URL | `VITE_BACKEND_URL=https://fake-backend.invalid` | pass; no real URL embedded |
+| Bandit | `bandit -r app -ll` | no medium/high findings |
+| Secret-pattern scan | 164 files, git-tracked + untracked-unignored | no real secrets; 6 intentional fake test fixtures excluded (see below) |
+
+Secret-scan exclusions (fake test fixtures only): `backend/tests/e2e/test_actions_flow_e2e.py`, `backend/tests/e2e/test_full_workflow_e2e.py`, `backend/tests/unit/actions_integration/test_actions_integration.py`, `extension/src/__tests__/session.test.ts`. The scanner was not disabled. The e2e files hard-code a test-only Fernet key; never reuse it outside tests.
+
+## Known Limitations
+- Not deployed; no live validation against real GitHub, Gemini, or Supabase. All AI/GitHub behaviour is tested with mocks.
+- Passing tests and preflight do not establish production readiness. No performance target (e.g. the 8-second analysis goal) has been measured.
+- Extension not tested in a real Chrome browser against a deployed backend.
+- Checklist-item feedback is accepted by the backend but has no UI control; the UI collects feedback for the risk tier and reviewer recommendation only.
+- Confidence values are heuristic indicators, not statistically calibrated probabilities. Risk scoring has not been validated against labeled defect data.
+- Gemini model availability not re-checked against current Google documentation.
+- `backend/PROJECT_STATE.md` is retained as a legacy log (bannered); its contents are outdated.
+- pytest-asyncio emits a configuration deprecation warning (`asyncio_default_fixture_loop_scope` unset).
+- A module-level `client = TestClient(app)` remains in `test_actions_flow_e2e.py` (left in place; not part of this change).
+
+## Decisions
+- Aggregation is done in SQL at read time rather than nightly batch tables (MVP scale).
+- Actions comment idempotency is handled by the workflow script updating a marker comment (`<!-- gitreview-ai-bot -->`).
+- `backend/PROJECT_STATE.md` kept as a legacy log instead of deleted: nothing references it, but it holds step history. Root `PROJECT_STATE.md` is authoritative.
+- Generated extension output (`extension/dist`, `extension/release`) is git-ignored and excluded from the source ZIP.
+
+## Next Step
+- Deploy the backend (Render) and Supabase with real secrets, run `python -m app.core.preflight` against the real production environment, then perform a controlled live end-to-end validation (real GitHub OAuth app, real Gemini key, a test repository) and measure latency before any production claim.

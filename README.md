@@ -4,7 +4,7 @@
 
 GitReview AI is an AI-assisted pull-request review platform designed to help developers identify PR risk, understand the reasoning behind the assessment, and obtain actionable review guidance.
 
-The current repository contains the implemented backend and AI analysis pipeline. The Chrome Extension/frontend and GitHub Actions integration are the next development stages and are currently in development.
+The repository contains the FastAPI backend and AI analysis pipeline, a Manifest V3 Chrome Extension (popup, dashboard, analytics, repository management), and a reusable GitHub Action. All of this is implemented and covered by automated tests that use mocks and an in-memory database. It has **not** yet been deployed or validated against live GitHub, Gemini, or Supabase services (see [Current Status](#current-status)).
 
 ## Problem Statement
 
@@ -36,7 +36,7 @@ GitReview AI aims to assist this workflow through a combination of:
 
 ### AI Analysis
 
-* Gemini-based semantic analysis
+* Gemini-based semantic analysis (default model `gemini-2.5-flash`, configurable via `GEMINI_MODEL`)
 * secure prompt construction
 * validated AI output
 * retry/validation behavior
@@ -63,6 +63,17 @@ Confidence calculation is implemented using a hybrid scoring mechanism with a co
 
 * Reviewer recommendation (CODEOWNERS-weighted ranking, abstain-on-insufficient-evidence)
 * Adaptive checklist (deterministic rules combined with AI signals)
+
+### Chrome Extension
+
+* Manifest V3 popup (React + TypeScript + Vite)
+* GitHub OAuth sign-in through the backend
+* Analysis view: risk tier, confidence, rationale, review focus areas, suggested reviewer, adaptive checklist
+* Feedback on the risk tier and on the reviewer recommendation
+* Checklist completion, persisted per reviewer via the backend
+* Dashboard with individual and repository analytics, and repository authorization management
+
+See [`extension/README.md`](extension/README.md) for setup and limitations.
 
 ### Backend API
 
@@ -127,15 +138,21 @@ flowchart TD
 * AI provider abstraction/interface
 * structured/validated AI output (Pydantic)
 
+### Extension
+
+* TypeScript, React, Vite (Manifest V3)
+
 ### Integration
 
 * GitHub API
 * GitHub OAuth
+* GitHub Actions (composite action)
 
 ### Testing / Quality
 
-* Pytest
+* Pytest (backend), Vitest (extension)
 * Ruff
+* TypeScript type-checking (`tsc --noEmit`)
 
 ## Project Structure
 
@@ -153,19 +170,25 @@ backend/
 │   └── repositories/
 ├── tests/
 ├── migrations/
-├── PROJECT_STATE.md
 ├── pyproject.toml
 ├── alembic.ini
 └── .env.example
+
+extension/                # Chrome Extension (Manifest V3)
+├── src/
+├── public/               # manifest.json + icons
+└── .env.example
+
+.github/
+├── actions/gitreview-ai/ # Reusable composite action + example workflow
+└── workflows/            # Workflow for this repository
 ```
 
 ## Current Status
 
-> **Backend and Chrome Extension implementation completed. GitHub Actions integration is implemented.**
+> **Backend, Chrome Extension, and GitHub Actions integration are implemented and covered by automated tests (mocked external services, in-memory database).**
 >
-> The current repository contains the implemented and tested FastAPI backend, GitHub integration, authentication and authorization layers, Gemini-based semantic PR analysis, deterministic code-analysis signals, hybrid risk assessment, explainable rationale, confidence scoring, reviewer recommendation, adaptive checklist, feedback API, checklist completion loop, confidence calibration, core REST API workflows, individual and repository-level analytics API, Chrome Extension dashboard, and GitHub Actions integration.
->
-> The complete product is still under active development.
+> **Not yet done:** deployment, and end-to-end validation against live GitHub, Gemini, and Supabase. Passing automated tests and a passing production preflight show that the code and configuration are well-formed. They do not show that the system is deployed or production-validated.
 
 ## GitHub Actions Integration
 
@@ -212,19 +235,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: GitReview AI Analysis
-        uses: SathwikGoundla/GitReview-AI/.github/actions/gitreview-ai@main
+        uses: SathwikGoundla/GitReview-AI/.github/actions/gitreview-ai@master
         with:
           backend-url: ${{ secrets.GITREVIEW_BACKEND_URL }}
           shared-secret: ${{ secrets.GITREVIEW_SHARED_SECRET }}
 ```
 
-> **Note:** This repository is not yet published to the GitHub Marketplace. The `uses:` path references this repository directly. For local development, use a repository-relative path.
+> **Note:** This repository is not yet published to the GitHub Marketplace. The `uses:` path references this repository directly and tracks the `master` branch; pin to a commit SHA if you need a stable version. For local development, use a repository-relative path.
 
 ### What Happens After the Action Runs
 
 * **On success:** A PR comment is posted (or updated) with the risk assessment, and a `risk: <tier>` label is applied.
 * **On 404 (repo not authorized):** The action exits with a warning — no comment is posted.
 * **On 401 (bad secret):** The action fails with an error message.
+* **On 413 (`PR_TOO_LARGE`):** The action step fails visibly (unexpected-response branch) and no comment or label is posted.
 * **Comment idempotency:** Repeated runs on the same PR update the existing comment rather than creating new ones.
 
 ### Security
@@ -258,14 +282,43 @@ jobs:
 - [x] GitHub Actions integration (reusable composite action + workflow)
 
 ### Planned
-- [ ] End-to-end integration testing
+- [ ] End-to-end validation against live GitHub, Gemini, and Supabase
 - [ ] Production deployment
 - [ ] GitHub Marketplace publication
 
+## Configuration Notes
+
+### PR size limits
+
+Oversized pull requests are rejected before any AI call or analysis persistence, with HTTP `413` and error code `PR_TOO_LARGE`. A PR exactly at a limit is accepted; one over is rejected.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `MAX_PR_LINES` | `3000` | Maximum lines added + removed |
+| `MAX_PR_BYTES` | `1048576` (1 MiB) | Maximum UTF-8 size of the diff text |
+
+### Production preflight
+
+`python -m app.core.preflight` (run from `backend/`) checks that production configuration is well-formed: required secrets present and not placeholders/weak values, `ENCRYPTION_KEY` is a valid Fernet key, CORS has no wildcard or localhost and includes a real `chrome-extension://<id>` origin, redirect URI is not localhost, and database URLs have the expected schemes. It exits non-zero on any failure and never prints secret values.
+
+### List-valued settings
+
+`ALLOWED_ORIGINS` and `SENSITIVE_PATH_PATTERNS` accept either a comma-separated string (`a,b`) or a JSON array (`["a","b"]`). Invalid JSON fails at startup.
+
+### Extension production build
+
+`VITE_BACKEND_URL` is required for a production extension build; the build fails without it.
+
 ## Testing
 
-- Unit and API tests: 352/352 passing
-- Ruff: PASS
+Counts below come from the most recent verified run (see `PROJECT_STATE.md` for the run details).
+
+- Backend (pytest, includes E2E): 519 passing
+- Extension (Vitest): 106 passing
+- Ruff check and format check: PASS
+- TypeScript type-check: PASS
+
+E2E tests use an in-memory SQLite database and mocked GitHub/Gemini calls. They are not live-service tests.
 
 ## Security
 

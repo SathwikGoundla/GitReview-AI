@@ -10,10 +10,11 @@ Verifies the POST /api/actions/analyze workflow:
 """
 
 from __future__ import annotations
-import pytest
-from fastapi.testclient import TestClient
 
 import os
+
+import pytest
+from fastapi.testclient import TestClient
 
 os.environ["APP_ENV"] = "test"
 os.environ["DEBUG"] = "false"
@@ -352,11 +353,6 @@ async def test_actions_analyze_github_fetch_failure_handled(actions_client):
         response = actions_client.post("/api/actions/analyze", json=payload, headers=headers)
         assert response.status_code in (404, 500, 502)
 
-
-from unittest.mock import AsyncMock, patch
-
-from app.main import app
-from app.github_integration.client import PRData
 
 client = TestClient(app)
 

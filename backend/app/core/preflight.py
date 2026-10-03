@@ -1,7 +1,9 @@
 import sys
-from typing import Tuple
-from app.core.config import get_settings, Settings
 import urllib.parse
+
+from cryptography.fernet import Fernet
+
+from app.core.config import get_settings
 
 WEAK_PLACEHOLDERS = {
     "your_github_oauth_app_client_id",
@@ -16,7 +18,7 @@ WEAK_PLACEHOLDERS = {
 WEAK_WORDS = {"changeme", "secret", "password"}
 
 
-def validate_secret(secret_value: str, min_length: int = 32) -> Tuple[bool, str]:
+def validate_secret(secret_value: str, min_length: int = 32) -> tuple[bool, str]:
     if not secret_value:
         return False, "MISSING"
 
@@ -35,7 +37,32 @@ def validate_secret(secret_value: str, min_length: int = 32) -> Tuple[bool, str]
     return True, "PASS"
 
 
-def check_production_cors(allowed_origins: list[str]) -> Tuple[bool, str]:
+def validate_fernet_key(key_value: str) -> tuple[bool, str]:
+    """Check that a value is a well-formed Fernet key (url-safe base64 of 32 bytes).
+
+    This only checks FORMAT. Strength/placeholder checks live in validate_secret()
+    and are applied separately. The key value is never included in the result.
+    """
+    if not key_value:
+        return False, "MISSING"
+
+    try:
+        Fernet(key_value.encode("utf-8"))
+    except (ValueError, TypeError, UnicodeEncodeError):
+        return False, "INVALID FORMAT (not a valid Fernet key)"
+
+    return True, "PASS"
+
+
+def validate_encryption_key(key_value: str) -> tuple[bool, str]:
+    """ENCRYPTION_KEY must pass the generic secret checks AND be a valid Fernet key."""
+    ok, status = validate_secret(key_value)
+    if not ok:
+        return ok, status
+    return validate_fernet_key(key_value)
+
+
+def check_production_cors(allowed_origins: list[str]) -> tuple[bool, str]:
     if not allowed_origins:
         return False, "MISSING"
 
@@ -60,7 +87,7 @@ def check_production_cors(allowed_origins: list[str]) -> Tuple[bool, str]:
     return True, "PASS"
 
 
-def check_db_url(url: str, is_sync: bool = False) -> Tuple[bool, str]:
+def check_db_url(url: str, is_sync: bool = False) -> tuple[bool, str]:
     if not url:
         return False, "MISSING"
 
@@ -112,7 +139,7 @@ def run_preflight() -> bool:
         report("GITHUB_REDIRECT_URI", "PASS")
 
     report("STATE_SECRET", validate_secret(settings.state_secret)[1])
-    report("ENCRYPTION_KEY", validate_secret(settings.encryption_key)[1])
+    report("ENCRYPTION_KEY", validate_encryption_key(settings.encryption_key)[1])
     report("GEMINI_API_KEY", validate_secret(settings.gemini_api_key)[1])
     report("ACTIONS_SHARED_SECRET", validate_secret(settings.actions_shared_secret)[1])
 

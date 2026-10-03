@@ -1,10 +1,12 @@
-import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from app.analysis.orchestrator import AnalysisOrchestrator
-from app.github_integration.client import PRData
 from app.core.exceptions import PRTooLargeError
 from app.core.models import PullRequest, Repository
+from app.github_integration.client import PRData
 
 
 @pytest.fixture
@@ -159,3 +161,48 @@ async def test_pr_size_limit_bytes_exceeded(mock_orchestrator, mock_pull_request
     # Assert no AI call and no persistence
     mock_orchestrator._call_ai_with_retry.assert_not_called()
     mock_orchestrator._persist_result.assert_not_called()
+
+
+# ── Recorded model name must reflect the configured model ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_persisted_model_name_uses_configured_gemini_model(
+    mock_orchestrator, mock_pull_request, monkeypatch
+):
+    from app.core.config import Settings
+    from app.core.models import PullRequestAnalysis
+
+    settings = Settings(gemini_model="gemini-custom-test-model")
+    monkeypatch.setattr("app.analysis.orchestrator.get_settings", lambda: settings)
+
+    added = []
+    db = MagicMock()
+    db.add = added.append
+
+    async def _flush():
+        for obj in added:
+            if isinstance(obj, PullRequestAnalysis) and obj.id is None:
+                obj.id = uuid.uuid4()
+
+    db.flush = _flush
+    # Stop after the main record is created: later steps need rich mocks we don't care about here.
+    with pytest.raises(Exception):
+        await mock_orchestrator._persist_result(
+            db, mock_pull_request, "a" * 40, MagicMock(), None, MagicMock(), 50.0,
+            MagicMock(), MagicMock(), "extension", "completed",
+        )  # fmt: skip
+
+    analyses = [o for o in added if isinstance(o, PullRequestAnalysis)]
+    assert len(analyses) == 1
+    assert analyses[0].model_name == "gemini-custom-test-model"
+
+
+def test_analysis_result_default_model_name_follows_settings(monkeypatch):
+    from app.analysis.orchestrator import AnalysisResult
+    from app.core.config import Settings
+
+    settings = Settings(gemini_model="gemini-another-model")
+    monkeypatch.setattr("app.analysis.orchestrator.get_settings", lambda: settings)
+    fields = AnalysisResult.__dataclass_fields__["model_name"]
+    assert fields.default_factory() == "gemini-another-model"

@@ -15,7 +15,8 @@ When you open a GitHub Pull Request, the extension:
    - **Explainable rationale** — the factors that drove the risk rating
    - **Review focus areas** — specific things to look for in the diff
    - **Suggested reviewer** — from CODEOWNERS and contribution history
-   - **Adaptive checklist** — only the dimensions relevant to this PR
+   - **Adaptive checklist** — only the dimensions relevant to this PR; items can be checked off and the state is saved to the backend
+5. Provides a **Dashboard** view (used by default when no PR page is detected) with individual and repository analytics and repository authorization management
 
 ## Prerequisites
 
@@ -46,8 +47,17 @@ npm run dev
 ## Production Build
 
 ```bash
-npm run build
-# Output: extension/dist/
+# VITE_BACKEND_URL is REQUIRED for a production build; the build fails without it.
+VITE_BACKEND_URL=https://your-backend.example npm run build
+# Output: extension/dist/  (generated, git-ignored)
+```
+
+`npm run package` runs a production build and writes `extension/release/gitreview-ai-extension.zip` (also git-ignored).
+
+## Type-check
+
+```bash
+npm run typecheck
 ```
 
 ## Load in Chrome
@@ -62,16 +72,16 @@ npm run build
 
 ```bash
 npm test
-# 86 tests: URL parsing, session management, API client, components
+# 106 tests (Vitest): URL parsing, session management, API client, components, dashboard
 ```
 
 ## Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VITE_BACKEND_URL` | `http://localhost:8000` | FastAPI backend URL (no trailing slash) |
+| `VITE_BACKEND_URL` | `http://localhost:8000` in development builds only; **no default in production builds** (build fails if unset) | FastAPI backend URL (no trailing slash) |
 
-Set in `.env` file (never commit `.env`). For production deployment on Render, set `VITE_BACKEND_URL=https://your-app.onrender.com`.
+Set in `.env` file (never commit `.env`) or in the environment of the build command. For a production deployment, set `VITE_BACKEND_URL` to your deployed backend URL.
 
 ## Authentication Flow
 
@@ -97,15 +107,14 @@ extension/
 │   ├── popup/        # React popup app
 │   ├── api/          # Typed API client (all backend calls)
 │   ├── auth/         # Session storage (chrome.storage.local)
-│   ├── components/   # React UI components
+│   ├── components/   # React UI components (analysis, dashboard, analytics, repositories)
 │   └── types/        # TypeScript interfaces (mirrors backend schemas)
 └── dist/             # Build output (load this in Chrome)
 ```
 
 ## Known Limitations
 
-- **Risk tier feedback**: Fully working. `AnalysisResponse.risk_assessment_id` is used as `prediction_reference_id` when submitting risk_tier feedback (Step 18.1).
-- **Reviewer / checklist feedback**: The backend supports it; the extension UI currently only exposes feedback for the risk tier. `reviewer_recommendation_id` and `checklist_item_id` are not yet in `AnalysisResponse`.
-- **Checklist completion is local-only**: The `checklist_item_completions` table exists in the backend schema but no PATCH endpoint has been implemented yet.
-- **No analytics dashboard in the popup**: Analytics data is available via `GET /api/analytics/me` but the popup does not render a full analytics view. The API client supports it.
+- **Feedback coverage**: The UI collects feedback for the **risk tier** and the **reviewer recommendation**. The backend also accepts `checklist_item` feedback, but the checklist UI does not expose a feedback control yet.
+- **Checklist completion**: Persisted via `PATCH /api/analyses/{analysis_id}/checklist/{item_id}` with an optimistic UI update that reverts if the request fails. Completion is tracked per reviewer by the backend.
+- **Not validated against live services**: Extension tests run against mocked fetch/chrome APIs. Behaviour in a real Chrome browser against a deployed backend and live GitHub has not been validated.
 - **OAuth callback tab**: Requires the backend running and `GITHUB_REDIRECT_URI` reachable from the browser.

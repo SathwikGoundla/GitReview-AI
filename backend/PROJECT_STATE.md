@@ -1,3 +1,8 @@
+> **LEGACY / HISTORICAL LOG.** This file is a step-by-step development history and is **not** kept current.
+> Test counts, status, and "next step" here are outdated. The single source of truth for current project
+> status is the root [`PROJECT_STATE.md`](../PROJECT_STATE.md). Statements below that this file is the
+> "sole authoritative file" are superseded.
+
 # GitReview AI — PROJECT_STATE.md
 # Authoritative continuity document. Updated after every implementation step.
 # Next session: UPLOAD ZIP → EXTRACT → READ THIS FILE FIRST → INSPECT SOURCE → CONTINUE.

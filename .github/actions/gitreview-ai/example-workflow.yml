@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: GitReview AI Analysis
-        uses: SathwikGoundla/GitReview-AI/.github/actions/gitreview-ai@main
+        uses: SathwikGoundla/GitReview-AI/.github/actions/gitreview-ai@master
         with:
           backend-url: ${{ secrets.GITREVIEW_BACKEND_URL }}
           shared-secret: ${{ secrets.GITREVIEW_SHARED_SECRET }}

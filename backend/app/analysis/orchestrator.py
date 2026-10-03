@@ -43,8 +43,8 @@ from app.analysis.prompt.builder import NormalizedPRData, PromptBuilder
 from app.analysis.reviewer.service import ReviewerRankingService, ReviewerRecommendationResult
 from app.analysis.risk.engine import RiskEngine, RiskResult
 from app.analysis.validation.validator import AnalysisResponseValidator
-from app.core.exceptions import PRTooLargeError
 from app.core.config import get_settings
+from app.core.exceptions import PRTooLargeError
 from app.core.logging import log_event
 from app.core.models import (
     ChecklistItem,
@@ -59,7 +59,6 @@ from app.github_integration.client import GitHubApiClient, PRData
 logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE_VERSION = "v1.0"
-MODEL_NAME = "gemini-2.5-flash"
 
 
 @dataclass
@@ -84,7 +83,7 @@ class AnalysisResult:
     checklist_items: list[dict] = field(default_factory=list)
     checklist_is_fallback: bool = False
     triggered_by: str = "extension"
-    model_name: str = MODEL_NAME
+    model_name: str = field(default_factory=lambda: get_settings().gemini_model)
     prompt_template_version: str = PROMPT_TEMPLATE_VERSION
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -327,6 +326,7 @@ class AnalysisOrchestrator:
             pull_request_id=pull_request_id,
             commit_sha=commit_sha,
             status=row.status,
+            model_name=row.model_name,
             summary=row.summary,
             risk_tier=risk.risk_tier if risk else "low",
             risk_source=risk.source if risk else "deterministic_only",
@@ -434,7 +434,7 @@ class AnalysisOrchestrator:
             summary=validated_ai.get("summary") if validated_ai else None,
             checklist_is_fallback_default=checklist_result.is_fallback,
             prompt_template_version=PROMPT_TEMPLATE_VERSION,
-            model_name=MODEL_NAME,
+            model_name=get_settings().gemini_model,
             triggered_by=triggered_by,
         )
         db.add(analysis)
